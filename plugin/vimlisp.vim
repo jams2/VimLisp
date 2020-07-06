@@ -1,3 +1,4 @@
+let g:VL_TRANSFORMERS = {'let': funcref('TransformLet')}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
 let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
@@ -79,6 +80,16 @@ function! LispMap(proc, l) abort
         return []
     endif
     return Cons(a:proc(Car(a:l)), LispMap(a:proc, Cdr(a:l)))
+endfunction
+
+function! DeepLispMap(proc, l) abort
+    if IsEmptyList(a:l)
+        return []
+    elseif type(Car(a:l)) ==  v:t_list
+        return Cons(DeepLispMap(a:proc, Car(a:l)), DeepLispMap(a:proc, Cdr(a:l)))
+    else
+        return Cons(a:proc(Car(a:l)), DeepLispMap(a:proc, Cdr(a:l)))
+    endif
 endfunction
 
 function! SubExprLen(str) abort
@@ -167,6 +178,12 @@ function! ParseStringLiteral(expr) abort
 endfunction
 
 function! StringToList(expr) abort
+    let expr_len = SubExprLen(a:expr)
+    if expr_len == -1
+        throw "Unterminated expression: "..string(a:expr)
+    elseif expr_len != strlen(a:expr)
+        throw "Unbalanced parentheses: "..string(a:expr)
+    endif
     let l = []
     let buf = []
     let chars = substitute(a:expr, s:OUTER_PARENS_R, '', 'g')
@@ -202,10 +219,27 @@ function! StringToList(expr) abort
     return l
 endfunction
 
-function! VlEval(expr) abort
-    let C = VlAnalyze(StrToVim(a:expr))
-    let r = C(g:VL_INITIAL_ENV, s:END_CONT)
-    return r
+function! MapTransformers(l) abort
+    if IsEmptyList(a:l)
+        return []
+    elseif type(Car(a:l)) ==  v:t_list
+        return Cons(MapTransformers(Car(a:l)), MapTransformers(Cdr(a:l)))
+    else
+        return ApplyTransformers(a:l)
+    endif
+endfunction
+
+function ApplyTransformers(expr) abort
+    if has_key(g:VL_TRANSFORMERS, Car(a:expr))
+        return get(g:VL_TRANSFORMERS, Car(a:expr))(a:expr)
+    endif
+    return a:expr
+endfunction
+
+function! VlEval(expr, env=g:VL_INITIAL_ENV) abort
+    let vim_repr = StrToVim(a:expr)
+    let vim_repr = MapTransformers(vim_repr)
+    return VlAnalyze(vim_repr)(a:env, s:END_CONT)
 endfunction
 
 function! Sequentially(proc1, proc2) abort
@@ -331,8 +365,6 @@ function! VlAnalyze(expr) abort
         return GenDefine(a:expr)
     elseif a:expr[0] =~? '^set!$'
         return {env, k -> k(SetVar(env, Cadr(a:expr), VlAnalyze(Caddr(a:expr))))}
-    elseif a:expr[0] =~? '^let$'
-        return VlAnalyze(TransformLet(a:expr))
     elseif a:expr[0] =~? '^call/cc$'
         return GenCallCC(a:expr)
     elseif type(a:expr) == v:t_list
