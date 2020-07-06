@@ -4,7 +4,7 @@ let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
 let s:VARNAME_R = '^[a-z][a-z0-9-?!*^]*$'
 let s:PRIMOP_R = '^[+*/=-]$\|^\(call/cc\)$'
 let s:STRING_CONST_R = '^".*"$'
-let s:NUMBER_R = '^\d\+$'
+let s:NUMBER_R = '^-\?\d\+$'
 let s:STR_DELIM = 34
 let s:LEFT_PAREN = 40
 let s:RIGHT_PAREN = 41
@@ -240,7 +240,6 @@ function! ExecProc(rator, rands, k)
     if Car(a:rator) =~? '^primitive$'
         return a:k(Cdr(a:rator)(a:rands))
     elseif Car(a:rator) =~? '^cont-primitive$'
-        echo "ExecProc: "..string(a:rator)
         return Cdr(a:rator)(Car(a:rands))
     elseif Car(a:rator) =~? '^proc$'
         let Body = ProcBody(a:rator)
@@ -255,7 +254,6 @@ function! ExecProc(rator, rands, k)
         let params = ProcParams(a:rator)
         let args = Cons(extend(['cont-primitive'], a:rands), [])
         let env2 = ExtendEnv(env, params, args)
-        echo "env2: "..string(env2)
         let result = Body(env2, a:k)
         return result
     endif
