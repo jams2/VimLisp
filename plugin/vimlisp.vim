@@ -6,12 +6,15 @@ let s:VARNAME_R = '^[a-z][a-z0-9-?!*^]*$'
 let s:PRIMOP_R = '^[+*/=-]$\|^\(call/cc\)$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
+let s:BOOL_R = '^\(#t\)\|\(#f\)$'
 let s:STR_DELIM = 34
 let s:LEFT_PAREN = 40
 let s:RIGHT_PAREN = 41
 let s:SPACE = 32
 let s:TAB = 9
 let s:NEWLINE = 13
+let s:TRUE = '#t'
+let s:FALSE = '#f'
 
 function! IsEmptyList(obj) abort
     return type(a:obj) == v:t_list && a:obj == []
@@ -149,7 +152,11 @@ function! StrToVim(expr) abort
         return a:expr - 0
     elseif a:expr =~ s:STRING_CONST_R
         return a:expr
-    elseif a:expr =~? s:VARNAME_R || a:expr =~? s:PRIMOP_R
+    elseif a:expr =~? s:VARNAME_R
+        return a:expr
+    elseif a:expr =~? s:PRIMOP_R
+        return a:expr
+    elseif a:expr =~? s:BOOL_R
         return a:expr
     elseif a:expr =~ '^(.*'
         return DeepLispList(StringToList(a:expr))
@@ -339,6 +346,19 @@ function! TransformLet(expr) abort
     return Cons(lambda, vals)
 endfunction
 
+function! IsTrue(expr) abort
+    return a:expr != s:FALSE
+endfunction
+
+function! GenCond(expr) abort
+    let P_clsr = VlAnalyze(Cadr(a:expr))
+    let C_clsr = {env, k -> VlAnalyze(Caddr(a:expr))(env, k)}
+    let alt = IsEmptyList(Cdddr(a:expr)) ? s:FALSE : Cadddr(a:expr)
+    let A_clsr = {env, k -> VlAnalyze(alt)(env, k)}
+    let Cont = {env, k -> {res -> IsTrue(res) ? C_clsr(env, k) : A_clsr(env, k)}}
+    return {env, k -> P_clsr(env, Cont(env, k))}
+endfunction
+
 function! VlAnalyze(expr) abort
     let expr = ApplyTransformers(a:expr)
     if type(expr) == v:t_number
@@ -351,6 +371,8 @@ function! VlAnalyze(expr) abort
         return GenApplication(expr)
     elseif expr[0] =~? '^lambda$'
         return GenProc(expr)
+    elseif expr[0] =~? '^if$'
+        return GenCond(expr)
     elseif expr[0] =~? '^begin$'
         return GenSequence(Cdr(expr))
     elseif expr[0] =~? '^define$'
@@ -376,4 +398,8 @@ function! VlAdd(args) abort
     return total
 endfunction
 
-let g:VL_INITIAL_ENV = {'+': ['primitive', funcref('VlAdd')]}
+let g:VL_INITIAL_ENV = {
+            \'+': ['primitive', funcref('VlAdd')],
+            \'#t': s:TRUE,
+            \'#f': s:FALSE,
+            \}
