@@ -306,6 +306,12 @@ function! GenProc(expr) abort
 endfunction
 
 function! TransformLet(expr) abort
+    let bindings = Cadr(a:expr)
+    let body = Cddr(a:expr)
+    let vars = LispMap({x -> Car(x)}, bindings)
+    let vals = LispMap({x -> Cadr(x)}, bindings)
+    let lambda = Cons('lambda', Cons(vars, body))
+    return Cons(lambda, vals)
 endfunction
 
 function! VlAnalyze(expr) abort

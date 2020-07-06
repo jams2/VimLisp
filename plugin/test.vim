@@ -37,6 +37,8 @@ let s:tests = [
             \[0, VlEval('(+ 1 2 (call/cc (lambda (k) 0)))')],
             \[6, VlEval('(+ 1 2 (call/cc (lambda (k) (k 3))))')],
             \[7, VlEval('(let ((x 3) (y 4)) (+ x y))')],
-            \[12, VlEval('(begin (define y (lambda (x) (+ 5 7))) (y 3))')]]
+            \[7, VlEval('((lambda (x y) (+ x y)) 3 4')],
+            \[12, VlEval('(begin (define y (lambda (x) (+ 5 7))) (y 3))')],
+            \]
 
 call RunTests(s:tests)
