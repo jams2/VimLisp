@@ -1,4 +1,7 @@
-let g:VL_TRANSFORMERS = {'let': funcref('TransformLet')}
+let g:VL_TRANSFORMERS = {
+            \'let': funcref('LetToLambda'),
+            \'cond': funcref('CondToIf'),
+            \}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
 let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
@@ -277,16 +280,14 @@ function! ExecProc(rator, rands, k)
         let Body = ProcBody(a:rator)
         let env = ProcEnv(a:rator)
         let params = ProcParams(a:rator)
-        let env2 = ExtendEnv(env, params, a:rands)
-        let result = Body(env2, a:k)
+        let result = Body(ExtendEnv(env, params, a:rands), a:k)
         return result
     elseif Car(a:rator) =~? '^cont$'
         let Body = ProcBody(a:rator)
         let env = ProcEnv(a:rator)
         let params = ProcParams(a:rator)
         let args = Cons(extend(['cont-primitive'], a:rands), [])
-        let env2 = ExtendEnv(env, params, args)
-        let result = Body(env2, a:k)
+        let result = Body(ExtendEnv(env, params, args), a:k)
         return result
     endif
 endfunction
@@ -337,13 +338,45 @@ function! GenProc(expr) abort
     return {env, k -> k(LispList(["proc", params, Body, env]))}
 endfunction
 
-function! TransformLet(expr) abort
+function! LetToLambda(expr) abort
     let bindings = Cadr(a:expr)
     let body = Cddr(a:expr)
     let vars = LispMap({x -> Car(x)}, bindings)
     let vals = LispMap({x -> Cadr(x)}, bindings)
     let lambda = Cons('lambda', Cons(vars, body))
     return Cons(lambda, vals)
+endfunction
+
+function! TransformCond(clauses) abort
+    if IsEmptyList(a:clauses)
+        return []
+    endif
+    let first = Car(a:clauses)
+    let rest = Cdr(a:clauses)
+    if Car(first) =~? '^else$'
+        if !IsEmptyList(rest)
+            throw "Invalid cond expression: else clause must be last"
+        endif
+        if IsEmptyList(Cddr(first))
+            return Cadr(first)
+        endif
+        return Cons('begin', Cdr(first))
+    endif
+    if IsEmptyList(Cddr(first))
+        let consequent = Cadr(first)
+    else
+        let consequent = Cons('begin', Cdr(first))
+    endif
+    if IsEmptyList(rest)
+        return LispList(['if', Car(first), consequent, s:FALSE])
+    else
+        return LispList(['if', Car(first), consequent, TransformCond(rest)])
+    endif
+endfunction
+
+function! CondToIf(expr) abort
+    let clauses = Cdr(a:expr)
+    return TransformCond(clauses)
 endfunction
 
 function! IsTrue(expr) abort
@@ -357,6 +390,12 @@ function! GenCond(expr) abort
     let A_clsr = {env, k -> VlAnalyze(alt)(env, k)}
     let Cont = {env, k -> {res -> IsTrue(res) ? C_clsr(env, k) : A_clsr(env, k)}}
     return {env, k -> P_clsr(env, Cont(env, k))}
+endfunction
+
+function! GenSetBang(expr) abort
+    let Val_closure = VlAnalyze(Caddr(a:expr))
+    let Cont = {env, k -> {val -> k(SetVar(env, Cadr(a:expr), val))}}
+    return {env, k -> Val_closure(env, Cont(env, k))}
 endfunction
 
 function! VlAnalyze(expr) abort
@@ -378,7 +417,7 @@ function! VlAnalyze(expr) abort
     elseif expr[0] =~? '^define$'
         return GenDefine(expr)
     elseif expr[0] =~? '^set!$'
-        return {env, k -> k(SetVar(env, Cadr(expr), VlAnalyze(Caddr(expr))))}
+        return GenSetBang(expr)
     elseif expr[0] =~? '^call/cc$'
         return GenCallCC(expr)
     elseif type(expr) == v:t_list
