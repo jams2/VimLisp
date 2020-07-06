@@ -2,7 +2,7 @@ let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
 let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
 let s:VARNAME_R = '^[a-z][a-z0-9-?!*^]*$'
-let s:PRIMOP_R = '^[+*/=-]$'
+let s:PRIMOP_R = '^[+*/=-]$\|^\(call/cc\)$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^\d\+$'
 let s:STR_DELIM = 34
@@ -133,10 +133,6 @@ function! DefineVar(env, var, val) abort
     let a:env[a:var] = a:val
 endfunction
 
-function! RemoveOuterParens(expr) abort
-    return substitute(a:expr, s:OUTER_PARENS_R, '', 'g')
-endfunction
-
 function! StrToVim(expr) abort
     if a:expr =~ s:NUMBER_R
         return a:expr - 0
@@ -173,12 +169,11 @@ endfunction
 function! StringToList(expr) abort
     let l = []
     let buf = []
-    let chars = RemoveOuterParens(a:expr)
+    let chars = substitute(a:expr, s:OUTER_PARENS_R, '', 'g')
     let i = 0
     while i < strlen(chars)
         let char = strgetchar(chars, i)
         if char == s:LEFT_PAREN
-            "new list
             let subexpr_len = SubExprLen(strcharpart(chars, i))
             let sublist = StringToList(strcharpart(chars, i, subexpr_len))
             let l = add(l, sublist)
@@ -244,11 +239,23 @@ endfunction
 function! ExecProc(rator, rands, k)
     if Car(a:rator) =~? '^primitive$'
         return a:k(Cdr(a:rator)(a:rands))
+    elseif Car(a:rator) =~? '^cont-primitive$'
+        echo "ExecProc: "..string(a:rator)
+        return Cdr(a:rator)(Car(a:rands))
     elseif Car(a:rator) =~? '^proc$'
         let Body = ProcBody(a:rator)
         let env = ProcEnv(a:rator)
         let params = ProcParams(a:rator)
         let env2 = ExtendEnv(env, params, a:rands)
+        let result = Body(env2, a:k)
+        return result
+    elseif Car(a:rator) =~? '^cont$'
+        let Body = ProcBody(a:rator)
+        let env = ProcEnv(a:rator)
+        let params = ProcParams(a:rator)
+        let args = Cons(extend(['cont-primitive'], a:rands), [])
+        let env2 = ExtendEnv(env, params, args)
+        echo "env2: "..string(env2)
         let result = Body(env2, a:k)
         return result
     endif
@@ -283,6 +290,23 @@ function! GenDefine(expr) abort
     return {env, k -> ValClosure(env, InnerClosure(env, k))}
 endfunction
 
+function! AnalyzeCallCCProc(expr) abort
+    let params = Cadr(a:expr)
+    let Body = GenSequence(Cddr(a:expr))
+    return {env, k -> k(SchemeList(["cont", params, Body, env]))}
+endfunction
+
+function! GenCallCC(expr) abort
+    let Proc = AnalyzeCallCCProc(Cadr(a:expr))
+    return {env, k -> Proc(env, {rator -> ExecProc(rator, [k], {x -> x})})}
+endfunction
+
+function! GenProc(expr) abort
+    let params = Cadr(a:expr)
+    let Body = GenSequence(Cddr(a:expr))
+    return {env, k -> k(SchemeList(["proc", params, Body, env]))}
+endfunction
+
 function! VlAnalyze(expr) abort
     if type(a:expr) == v:t_number
         return {env, k -> k(a:expr)}
@@ -293,15 +317,15 @@ function! VlAnalyze(expr) abort
     elseif type(Car(a:expr)) == v:t_list
         return GenApplication(a:expr)
     elseif Car(a:expr) =~? '^lambda$'
-        let params = Cadr(a:expr)
-        let Body = VlAnalyze(Caddr(a:expr))
-        return {env, k -> k(SchemeList(["proc", params, Body, env]))}
+        return GenProc(a:expr)
     elseif Car(a:expr) =~? '^begin$'
         return GenSequence(Cdr(a:expr))
     elseif Car(a:expr) =~? '^define$'
         return GenDefine(a:expr)
     elseif Car(a:expr) =~? '^set!$'
         return {env, k -> k(SetVar(env, Cadr(a:expr), VlAnalyze(Caddr(a:expr))))}
+    elseif Car(a:expr) =~? '^call/cc$'
+        return GenCallCC(a:expr)
     elseif type(a:expr) == v:t_list
         return GenApplication(a:expr)
     else
