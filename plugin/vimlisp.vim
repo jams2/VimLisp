@@ -219,18 +219,10 @@ function! StringToList(expr) abort
     return l
 endfunction
 
-function! MapTransformers(l) abort
-    if IsEmptyList(a:l)
-        return []
-    elseif type(Car(a:l)) ==  v:t_list
-        return Cons(MapTransformers(Car(a:l)), MapTransformers(Cdr(a:l)))
-    else
-        return ApplyTransformers(a:l)
-    endif
-endfunction
-
 function ApplyTransformers(expr) abort
-    if has_key(g:VL_TRANSFORMERS, Car(a:expr))
+    if type(a:expr) != v:t_list || type(Car(a:expr)) == v:t_list
+        return a:expr
+    elseif has_key(g:VL_TRANSFORMERS, Car(a:expr))
         return get(g:VL_TRANSFORMERS, Car(a:expr))(a:expr)
     endif
     return a:expr
@@ -238,7 +230,6 @@ endfunction
 
 function! VlEval(expr, env=g:VL_INITIAL_ENV) abort
     let vim_repr = StrToVim(a:expr)
-    let vim_repr = MapTransformers(vim_repr)
     return VlAnalyze(vim_repr)(a:env, s:END_CONT)
 endfunction
 
@@ -349,28 +340,29 @@ function! TransformLet(expr) abort
 endfunction
 
 function! VlAnalyze(expr) abort
-    if type(a:expr) == v:t_number
-        return {env, k -> k(a:expr)}
-    elseif type(a:expr) == v:t_string && a:expr =~ s:STRING_CONST_R
-        return {env, k -> k(a:expr)}
-    elseif type(a:expr) == v:t_string
-        return {env, k -> k(ApplyEnv(env, a:expr))}
-    elseif type(a:expr[0]) == v:t_list
-        return GenApplication(a:expr)
-    elseif a:expr[0] =~? '^lambda$'
-        return GenProc(a:expr)
-    elseif a:expr[0] =~? '^begin$'
-        return GenSequence(Cdr(a:expr))
-    elseif a:expr[0] =~? '^define$'
-        return GenDefine(a:expr)
-    elseif a:expr[0] =~? '^set!$'
-        return {env, k -> k(SetVar(env, Cadr(a:expr), VlAnalyze(Caddr(a:expr))))}
-    elseif a:expr[0] =~? '^call/cc$'
-        return GenCallCC(a:expr)
-    elseif type(a:expr) == v:t_list
-        return GenApplication(a:expr)
+    let expr = ApplyTransformers(a:expr)
+    if type(expr) == v:t_number
+        return {env, k -> k(expr)}
+    elseif type(expr) == v:t_string && expr =~ s:STRING_CONST_R
+        return {env, k -> k(expr)}
+    elseif type(expr) == v:t_string
+        return {env, k -> k(ApplyEnv(env, expr))}
+    elseif type(expr[0]) == v:t_list
+        return GenApplication(expr)
+    elseif expr[0] =~? '^lambda$'
+        return GenProc(expr)
+    elseif expr[0] =~? '^begin$'
+        return GenSequence(Cdr(expr))
+    elseif expr[0] =~? '^define$'
+        return GenDefine(expr)
+    elseif expr[0] =~? '^set!$'
+        return {env, k -> k(SetVar(env, Cadr(expr), VlAnalyze(Caddr(expr))))}
+    elseif expr[0] =~? '^call/cc$'
+        return GenCallCC(expr)
+    elseif type(expr) == v:t_list
+        return GenApplication(expr)
     else
-        throw "Invalid expression: "..a:expr
+        throw "Invalid expression: "..expr
     endif
 endfunction
 

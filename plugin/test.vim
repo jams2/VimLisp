@@ -38,6 +38,7 @@ let s:tests = [
             \[7, TestVlEval('(let ((x 3) (y 4)) (+ x y))')],
             \[7, TestVlEval('((lambda (x y) (+ x y)) 3 4)')],
             \[12, TestVlEval('(begin (define y (lambda (x) (+ 5 7))) (y 3))')],
+            \[5, TestVlEval('(let ((x 3)) (let ((x 5)) x))')],
             \]
 
 call RunTests(s:tests)
