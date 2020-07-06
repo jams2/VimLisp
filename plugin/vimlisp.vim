@@ -12,7 +12,7 @@ let s:SPACE = 32
 let s:TAB = 9
 let s:NEWLINE = 13
 
-function! NilP(obj) abort
+function! IsEmptyList(obj) abort
     return type(a:obj) == v:t_list && a:obj == []
 endfunction
 
@@ -21,7 +21,7 @@ function! IsWhiteSpace(char) abort
 endfunction
 
 function! DeepLispList(elts) abort
-    if NilP(a:elts)
+    if IsEmptyList(a:elts)
         return []
     elseif len(a:elts) == 1
         if type(a:elts[0]) == v:t_list
@@ -36,7 +36,7 @@ function! DeepLispList(elts) abort
 endfunction
 
 function! LispList(elts) abort
-    if NilP(a:elts)
+    if IsEmptyList(a:elts)
         return []
     endif
     return Cons(a:elts[0], LispList(a:elts[1:]))
@@ -75,7 +75,7 @@ function! Cadddr(list) abort
 endfunction
 
 function! LispMap(proc, l) abort
-    if NilP(a:l)
+    if IsEmptyList(a:l)
         return []
     endif
     return Cons(a:proc(Car(a:l)), LispMap(a:proc, Cdr(a:l)))
@@ -111,7 +111,7 @@ function! ExtendEnv(env, vars, vals) abort
     let new_frame = {s:PREV_FRAME_KEY: a:env}
     let var_l = a:vars
     let val_l = a:vals
-    while !NilP(var_l)
+    while !IsEmptyList(var_l)
         let new_frame[Car(var_l)] = Car(val_l)
         let var_l = Cdr(var_l)
         let val_l = Cdr(val_l)
@@ -185,7 +185,7 @@ function! StringToList(expr) abort
             endif
             let i += 1
         elseif char == s:STR_DELIM
-            if !NilP(buf)
+            if !IsEmptyList(buf)
                 throw "Invalid string literal: "..strcharpart(chars, i)
             endif
             let [string_chars, length] = ParseStringLiteral(strcharpart(chars, i))
@@ -204,7 +204,7 @@ endfunction
 
 function! VlEval(expr) abort
     let C = VlAnalyze(StrToVim(a:expr))
-    let r = C(s:INITIAL_ENV, s:END_CONT)
+    let r = C(g:VL_INITIAL_ENV, s:END_CONT)
     return r
 endfunction
 
@@ -216,7 +216,7 @@ function! GenSequence(expr) abort
     let Analyzer = {x -> VlAnalyze(x)}
     let closures = LispMap(Analyzer, a:expr)
     let C1 = Car(closures)
-    while !NilP(Cdr(closures))
+    while !IsEmptyList(Cdr(closures))
         let C2 = Cadr(closures)
         let C1 = Sequentially(C1, C2)
         let closures = Cdr(closures)
@@ -260,7 +260,7 @@ function! ExecProc(rator, rands, k)
 endfunction
 
 function! EvalClosureList(l, env, k) abort
-    if NilP(a:l)
+    if IsEmptyList(a:l)
         return a:k([])
     endif
     let InnerCont = {arg -> {args -> a:k(Cons(arg, args))}}
@@ -305,6 +305,9 @@ function! GenProc(expr) abort
     return {env, k -> k(LispList(["proc", params, Body, env]))}
 endfunction
 
+function! TransformLet(expr) abort
+endfunction
+
 function! VlAnalyze(expr) abort
     if type(a:expr) == v:t_number
         return {env, k -> k(a:expr)}
@@ -312,17 +315,19 @@ function! VlAnalyze(expr) abort
         return {env, k -> k(a:expr)}
     elseif type(a:expr) == v:t_string
         return {env, k -> k(ApplyEnv(env, a:expr))}
-    elseif type(Car(a:expr)) == v:t_list
+    elseif type(a:expr[0]) == v:t_list
         return GenApplication(a:expr)
-    elseif Car(a:expr) =~? '^lambda$'
+    elseif a:expr[0] =~? '^lambda$'
         return GenProc(a:expr)
-    elseif Car(a:expr) =~? '^begin$'
+    elseif a:expr[0] =~? '^begin$'
         return GenSequence(Cdr(a:expr))
-    elseif Car(a:expr) =~? '^define$'
+    elseif a:expr[0] =~? '^define$'
         return GenDefine(a:expr)
-    elseif Car(a:expr) =~? '^set!$'
+    elseif a:expr[0] =~? '^set!$'
         return {env, k -> k(SetVar(env, Cadr(a:expr), VlAnalyze(Caddr(a:expr))))}
-    elseif Car(a:expr) =~? '^call/cc$'
+    elseif a:expr[0] =~? '^let$'
+        return VlAnalyze(TransformLet(a:expr))
+    elseif a:expr[0] =~? '^call/cc$'
         return GenCallCC(a:expr)
     elseif type(a:expr) == v:t_list
         return GenApplication(a:expr)
@@ -334,11 +339,11 @@ endfunction
 function! VlAdd(args) abort
     let total = 0
     let l = a:args
-    while !NilP(l)
+    while !IsEmptyList(l)
         let total += Car(l)
         let l = Cdr(l)
     endwhile
     return total
 endfunction
 
-let s:INITIAL_ENV = {'+': ['primitive', funcref('VlAdd')]}
+let g:VL_INITIAL_ENV = {'+': ['primitive', funcref('VlAdd')]}

@@ -1,6 +1,6 @@
 source plugin/vimlisp.vim
 
-let s:TEST_ENV = #{x: 3}
+let s:TEST_ENV = #{x: 3, __prev_frame: g:VL_INITIAL_ENV}
 let s:END_CONT = {val -> val}
 
 function! TestVlEval(expr) abort
@@ -36,6 +36,7 @@ let s:tests = [
             \[0, VlEval('(+ 1 2 (call/cc (lambda (k) (k -3))))')],
             \[0, VlEval('(+ 1 2 (call/cc (lambda (k) 0)))')],
             \[6, VlEval('(+ 1 2 (call/cc (lambda (k) (k 3))))')],
+            \[7, VlEval('(let ((x 3) (y 4)) (+ x y))')],
             \[12, VlEval('(begin (define y (lambda (x) (+ 5 7))) (y 3))')]]
 
 call RunTests(s:tests)
