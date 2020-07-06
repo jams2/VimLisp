@@ -152,6 +152,22 @@ function! StrToVim(expr) abort
 endfunction
 
 function! ParseStringLiteral(expr) abort
+    let end = strlen(a:expr)
+    let buf = [strgetchar(a:expr, 0)]
+    let i = 1
+    let char = strgetchar(a:expr, i)
+    while i < end
+        let buf = add(buf, char)
+        if char == s:STR_DELIM
+            break
+        endif
+        let i += 1
+        let char = strgetchar(a:expr, i)
+    endwhile
+    if buf[-1] != s:STR_DELIM
+        throw "Unterminated string: "..a:expr
+    endif
+    return [buf, i+1]
 endfunction
 
 function! StringToList(expr) abort
@@ -159,7 +175,6 @@ function! StringToList(expr) abort
     let buf = []
     let chars = RemoveOuterParens(a:expr)
     let i = 0
-    let parsing_string = 0
     while i < strlen(chars)
         let char = strgetchar(chars, i)
         if char == s:LEFT_PAREN
@@ -168,16 +183,20 @@ function! StringToList(expr) abort
             let sublist = StringToList(strcharpart(chars, i, subexpr_len))
             let l = add(l, sublist)
             let i += subexpr_len
-        elseif IsWhiteSpace(char) && !parsing_string
+        elseif IsWhiteSpace(char)
             if len(buf) > 0
                 let l = add(l, StrToVim(list2str(buf)))
                 let buf = []
             endif
             let i += 1
-        else
-            if char == s:STR_DELIM
-                let parsing_string = !parsing_string
+        elseif char == s:STR_DELIM
+            if !NilP(buf)
+                throw "Invalid string literal: "..strcharpart(chars, i)
             endif
+            let [string_chars, length] = ParseStringLiteral(strcharpart(chars, i))
+            let l = add(l, StrToVim(list2str(string_chars)))
+            let i += length
+        else
             let buf = add(buf, char)
             let i += 1
         endif

@@ -9,7 +9,7 @@ endfunction
 
 function! RunTests(tests) abort
     for [expected, actual] in a:tests
-        echo "Expected "..expected..", got: "..string(actual)
+        echo "Expected "..string(expected)..", got: "..string(actual)
     endfor
 endfunction
 
