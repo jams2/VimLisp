@@ -20,26 +20,26 @@ function! IsWhiteSpace(char) abort
     return a:char == s:SPACE || a:char == s:TAB || a:char == s:NEWLINE
 endfunction
 
-function! DeepSchemeList(elts) abort
+function! DeepLispList(elts) abort
     if NilP(a:elts)
         return []
     elseif len(a:elts) == 1
         if type(a:elts[0]) == v:t_list
-            return Cons(DeepSchemeList(a:elts[0]), [])
+            return Cons(DeepLispList(a:elts[0]), [])
         endif
         return add(a:elts, [])
     elseif type(a:elts[0]) == v:t_list
-        return Cons(DeepSchemeList(a:elts[0]), DeepSchemeList(a:elts[1:]))
+        return Cons(DeepLispList(a:elts[0]), DeepLispList(a:elts[1:]))
     else
-        return Cons(a:elts[0], DeepSchemeList(a:elts[1:]))
+        return Cons(a:elts[0], DeepLispList(a:elts[1:]))
     endif
 endfunction
 
-function! SchemeList(elts) abort
+function! LispList(elts) abort
     if NilP(a:elts)
         return []
     endif
-    return Cons(a:elts[0], SchemeList(a:elts[1:]))
+    return Cons(a:elts[0], LispList(a:elts[1:]))
 endfunction
 
 function! Cons(a, d) abort
@@ -74,11 +74,11 @@ function! Cadddr(list) abort
     return a:list[1][1][1][0]
 endfunction
 
-function! SchemeMap(proc, l) abort
+function! LispMap(proc, l) abort
     if NilP(a:l)
         return []
     endif
-    return Cons(a:proc(Car(a:l)), SchemeMap(a:proc, Cdr(a:l)))
+    return Cons(a:proc(Car(a:l)), LispMap(a:proc, Cdr(a:l)))
 endfunction
 
 function! SubExprLen(str) abort
@@ -141,7 +141,7 @@ function! StrToVim(expr) abort
     elseif a:expr =~? s:VARNAME_R || a:expr =~? s:PRIMOP_R
         return a:expr
     elseif a:expr =~ '^(.*'
-        return DeepSchemeList(StringToList(a:expr))
+        return DeepLispList(StringToList(a:expr))
     else
         throw "Invalid expr: "..a:expr
     endif
@@ -214,9 +214,9 @@ endfunction
 
 function! GenSequence(expr) abort
     let Analyzer = {x -> VlAnalyze(x)}
-    let closures = SchemeMap(Analyzer, a:expr)
+    let closures = LispMap(Analyzer, a:expr)
     let C1 = Car(closures)
-    while Cdr(closures) != []
+    while !NilP(Cdr(closures))
         let C2 = Cadr(closures)
         let C1 = Sequentially(C1, C2)
         let closures = Cdr(closures)
@@ -260,7 +260,7 @@ function! ExecProc(rator, rands, k)
 endfunction
 
 function! EvalClosureList(l, env, k) abort
-    if a:l == []
+    if NilP(a:l)
         return a:k([])
     endif
     let InnerCont = {arg -> {args -> a:k(Cons(arg, args))}}
@@ -278,7 +278,7 @@ endfunction
 
 function! GenApplication(expr) abort
     let Rator = VlAnalyze(Car(a:expr))
-    let rands = SchemeMap({x -> VlAnalyze(x)}, Cdr(a:expr))
+    let rands = LispMap({x -> VlAnalyze(x)}, Cdr(a:expr))
     return {env, k -> Rator(env, RatorCont(rands, env, k))}
 endfunction
 
@@ -291,7 +291,7 @@ endfunction
 function! AnalyzeCallCCProc(expr) abort
     let params = Cadr(a:expr)
     let Body = GenSequence(Cddr(a:expr))
-    return {env, k -> k(SchemeList(["cont", params, Body, env]))}
+    return {env, k -> k(LispList(["cont", params, Body, env]))}
 endfunction
 
 function! GenCallCC(expr) abort
@@ -302,7 +302,7 @@ endfunction
 function! GenProc(expr) abort
     let params = Cadr(a:expr)
     let Body = GenSequence(Cddr(a:expr))
-    return {env, k -> k(SchemeList(["proc", params, Body, env]))}
+    return {env, k -> k(LispList(["proc", params, Body, env]))}
 endfunction
 
 function! VlAnalyze(expr) abort
@@ -334,7 +334,7 @@ endfunction
 function! VlAdd(args) abort
     let total = 0
     let l = a:args
-    while l != []
+    while !NilP(l)
         let total += Car(l)
         let l = Cdr(l)
     endwhile

@@ -25,14 +25,17 @@ let s:tests = [
             \[0, TestVlEval("(define x 3)")],
             \[0, TestVlEval('(define x "hello, world")')],
             \[0, TestVlEval('(set! x 3)')],
-            \["proc...", TestVlEval('(lambda (x y) x y)')],
+            \['proc', TestVlEval('(lambda (x y) x y)')[0]],
             \[4, TestVlEval('(begin 1 2 4)')],
             \[3, TestVlEval('(begin (define x 3) x)')],
             \[3, VlEval('(+ 1 2)')],
             \[12, VlEval('((lambda (x y) (+ x y)) 5 7)')],
             \[7, TestVlEval('(call/cc (lambda (k) 7))')],
             \[7, TestVlEval('(call/cc (lambda (k) (k 7)))')],
+            \[9, TestVlEval('((lambda () 5 7 9))')],
             \[0, VlEval('(+ 1 2 (call/cc (lambda (k) (k -3))))')],
+            \[0, VlEval('(+ 1 2 (call/cc (lambda (k) 0)))')],
+            \[6, VlEval('(+ 1 2 (call/cc (lambda (k) (k 3))))')],
             \[12, VlEval('(begin (define y (lambda (x) (+ 5 7))) (y 3))')]]
 
 call RunTests(s:tests)
