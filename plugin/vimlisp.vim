@@ -2,8 +2,7 @@ let g:VL_TRANSFORMERS = {}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
 let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
-let s:SYMBOL_R = '^[a-z][a-z0-9-?!*^]*$'
-let s:PRIMOP_R = '^[+*/=-]$\|^\(call/cc\)$'
+let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\+-]\+$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
 let s:BOOL_R = '^\(#t\)\|\(#f\)$'
@@ -79,7 +78,7 @@ function! VlParseString(tokens) abort
     if a:tokens[0] != '"' || a:tokens[-1] != '"'
         throw "Invalid string literal: "..string(join(a:tokens))
     endif
-    return StrFactory(join(a:tokens[1:-1]))
+    return StrFactory(join(a:tokens[1:-2]))
 endfunction
 
 function! StrFactory(str) abort
@@ -122,8 +121,6 @@ function! VlParseAtom(token) abort
     elseif a:token =~ s:STRING_CONST_R
         return a:token
     elseif a:token =~? s:SYMBOL_R
-        return a:token
-    elseif a:token =~? s:PRIMOP_R
         return a:token
     elseif a:token =~? s:BOOL_R
         return a:token

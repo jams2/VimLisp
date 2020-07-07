@@ -31,7 +31,7 @@ call RunEvalTests([
             \[3, 'x'],
             \[-3, '-3'],
             \[123, 123],
-            \['"hello"', '"hello"'],
+            \[str2list("hello"), '"hello"'],
             \[0, "(define x 3)"],
             \[0, '(define x "hello, world")'],
             \[0, '(set! x 3)'],
