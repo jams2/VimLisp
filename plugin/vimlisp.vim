@@ -2,7 +2,7 @@ let g:VL_TRANSFORMERS = {}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
 let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
-let s:VARNAME_R = '^[a-z][a-z0-9-?!*^]*$'
+let s:SYMBOL_R = '^[a-z][a-z0-9-?!*^]*$'
 let s:PRIMOP_R = '^[+*/=-]$\|^\(call/cc\)$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
@@ -79,7 +79,11 @@ function! VlParseString(tokens) abort
     if a:tokens[0] != '"' || a:tokens[-1] != '"'
         throw "Invalid string literal: "..string(join(a:tokens))
     endif
-    return join(a:tokens)
+    return StrFactory(join(a:tokens[1:-1]))
+endfunction
+
+function! StrFactory(str) abort
+    return ['str', #{_chars: str2list(a:str)}]
 endfunction
 
 function! NestedNonTerminalLen(tokens, open, close) abort
@@ -117,7 +121,7 @@ function! VlParseAtom(token) abort
         return a:token - 0
     elseif a:token =~ s:STRING_CONST_R
         return a:token
-    elseif a:token =~? s:VARNAME_R
+    elseif a:token =~? s:SYMBOL_R
         return a:token
     elseif a:token =~? s:PRIMOP_R
         return a:token
@@ -132,12 +136,12 @@ function! VlAnalyze(expr) abort
     let expr = ApplyTransformers(a:expr)
     if type(expr) == v:t_number
         return {env, k -> k(expr)}
-    elseif type(expr) == v:t_string && expr =~ s:STRING_CONST_R
-        return {env, k -> k(expr)}
     elseif type(expr) == v:t_string
         return {env, k -> k(ApplyEnv(env, expr))}
     elseif type(expr[0]) == v:t_list
         return GenApplication(expr)
+    elseif expr[0] =~? '^str$'
+        return {env, k -> k(get(Cadr(expr), "_chars"))}
     elseif expr[0] =~? '^quote$'
         return {env, k -> k(Cadr(expr))}
     elseif expr[0] =~? '^lambda$'
@@ -335,12 +339,7 @@ function! ParseStringLiteral(expr) abort
 endfunction
 
 function ApplyTransformers(expr) abort
-    if type(a:expr) != v:t_list
-        if a:expr =~? "^'.*$"
-            return TransformQuote(a:expr)
-        endif
-        return a:expr
-    elseif type(Car(a:expr)) == v:t_list
+    if type(Car(a:expr)) == v:t_list
         return a:expr
     elseif has_key(g:VL_TRANSFORMERS, Car(a:expr))
         return get(g:VL_TRANSFORMERS, Car(a:expr))(a:expr)
@@ -461,10 +460,6 @@ endfunction
 function! CondToIf(expr) abort
     let clauses = Cdr(a:expr)
     return TransformCond(clauses)
-endfunction
-
-function! TransformQuote(expr) abort
-    return StrToVim("(quote "..strcharpart(a:expr, 1)..")")
 endfunction
 
 function! IsTrue(expr) abort

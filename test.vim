@@ -27,11 +27,6 @@ function! RunEvalTests(tests) abort
     endfor
 endfunction
 
-call RunTests([
-            \[['if', ['#t', [5, [7, []]]]],
-                \CondToIf(StrToVim('(cond (#t 5) (else 7))'))],
-            \])
-
 call RunEvalTests([
             \[3, 'x'],
             \[-3, '-3'],
