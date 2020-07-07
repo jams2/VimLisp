@@ -7,6 +7,7 @@ let s:PRIMOP_R = '^[+*/=-]$\|^\(call/cc\)$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
 let s:BOOL_R = '^\(#t\)\|\(#f\)$'
+let s:QUOTE = 39
 let s:STR_DELIM = 34
 let s:LEFT_PAREN = 40
 let s:RIGHT_PAREN = 41
@@ -17,8 +18,114 @@ let s:TRUE = '#t'
 let s:FALSE = '#f'
 
 function! VlEval(expr, env=g:VL_INITIAL_ENV) abort
-    let vim_repr = StrToVim(a:expr)
-    return VlAnalyze(vim_repr)(a:env, s:END_CONT)
+    let tokens = split(substitute(a:expr, '\([()"'']\)', ' \1 ', 'g'))
+    let syntax = VlParse(tokens)
+    if type(syntax) == v:t_list
+        let syntax = DeepLispList(syntax)
+    endif
+    return VlAnalyze(syntax)(a:env, s:END_CONT)
+endfunction
+
+function! VlParse(tokens) abort
+    if len(a:tokens) == 0
+        throw "Unterminated expression"
+    elseif len(a:tokens) == 1
+        return VlParseAtom(a:tokens[0])
+    elseif a:tokens[0] == "("
+        return VlParseList(a:tokens)
+    elseif a:tokens[0] == '"'
+        return VlParseString(a:tokens)
+    elseif a:tokens[0] == "'"
+        return ['quote', VlParse(a:tokens[1:])]
+    endif
+endfunction
+
+function! VlParseList(tokens) abort
+    if a:tokens[0] != "("
+        throw "Invalid list structure -- VlParseList"
+    endif
+    let exprlist = []
+    let i = 1  "skip open paren
+    while i < len(a:tokens)
+        let token = a:tokens[i]
+        if token == "("
+            let listlen = NestedNonTerminalLen(a:tokens[i:], "(", ")")
+            call add(exprlist, VlParseList(a:tokens[i:i+listlen]))
+            let i += listlen
+        elseif token == ")"
+            return exprlist
+        elseif token == '"'
+            let stringlen = NonTerminalLen(a:tokens[i:], '"')
+            call add(exprlist, VlParseString(a:tokens[i:i+stringlen-1]))
+            let i += stringlen
+        elseif token == "'"
+            if a:tokens[i+1] == "("
+                let listlen = NestedNonTerminalLen(a:tokens[i+1:], "(", ")")
+                call add(exprlist, ["quote", VlParseList(a:tokens[i+1:i+listlen])])
+                let i += listlen + 1
+            else
+                call add(exprlist, ["quote", a:tokens[i+1]])
+                let i += 2
+            endif
+        else
+            call add(exprlist, VlParseAtom(token))
+            let i += 1
+        endif
+    endwhile
+    return exprlist
+endfunction
+
+function! VlParseString(tokens) abort
+    if a:tokens[0] != '"' || a:tokens[-1] != '"'
+        throw "Invalid string literal: "..string(join(a:tokens))
+    endif
+    return join(a:tokens)
+endfunction
+
+function! NestedNonTerminalLen(tokens, open, close) abort
+    let open_count = 0
+    for i in range(len(a:tokens))
+        let token = a:tokens[i]
+        if token == a:open
+            let open_count += 1
+        elseif token == a:close
+            let open_count -= 1
+            if open_count == 0
+                return i + 1
+            endif
+        endif
+    endfor
+    return -1
+endfunction
+
+function! NonTerminalLen(tokens, delim) abort
+    let delim_count = 0
+    for i in range(len(a:tokens))
+        let token = a:tokens[i]
+        if token == a:delim
+            let delim_count += 1
+            if delim_count == 2
+                return i + 1
+            endif
+        endif
+    endfor
+    return -1
+endfunction
+
+function! VlParseAtom(token) abort
+    if a:token =~ s:NUMBER_R
+        return a:token - 0
+    elseif a:token =~ s:STRING_CONST_R
+        return a:token
+    elseif a:token =~? s:VARNAME_R
+        return a:token
+    elseif a:token =~? s:PRIMOP_R
+        return a:token
+    elseif a:token =~? s:BOOL_R
+        return a:token
+    else
+        throw "Invalid token: "..a:token
+    endif
 endfunction
 
 function! VlAnalyze(expr) abort
@@ -32,7 +139,7 @@ function! VlAnalyze(expr) abort
     elseif type(expr[0]) == v:t_list
         return GenApplication(expr)
     elseif expr[0] =~? '^quote$'
-        return {env, k -> Cadr(expr)}
+        return {env, k -> k(Cadr(expr))}
     elseif expr[0] =~? '^lambda$'
         return GenProc(expr)
     elseif expr[0] =~? '^if$'
@@ -49,6 +156,21 @@ function! VlAnalyze(expr) abort
         return GenApplication(expr)
     else
         throw "Invalid expression: "..expr
+    endif
+endfunction
+
+function! DeepLispList(elts) abort
+    if IsEmptyList(a:elts)
+        return []
+    elseif len(a:elts) == 1
+        if type(a:elts[0]) == v:t_list
+            return Cons(DeepLispList(a:elts[0]), [])
+        endif
+        return add(a:elts, [])
+    elseif type(a:elts[0]) == v:t_list
+        return Cons(DeepLispList(a:elts[0]), DeepLispList(a:elts[1:]))
+    else
+        return Cons(a:elts[0], DeepLispList(a:elts[1:]))
     endif
 endfunction
 
@@ -81,21 +203,6 @@ function! IsWhiteSpace(char) abort
     return a:char == s:SPACE || a:char == s:TAB || a:char == s:NEWLINE
 endfunction
 
-function! DeepLispList(elts) abort
-    if IsEmptyList(a:elts)
-        return []
-    elseif len(a:elts) == 1
-        if type(a:elts[0]) == v:t_list
-            return Cons(DeepLispList(a:elts[0]), [])
-        endif
-        return add(a:elts, [])
-    elseif type(a:elts[0]) == v:t_list
-        return Cons(DeepLispList(a:elts[0]), DeepLispList(a:elts[1:]))
-    else
-        return Cons(a:elts[0], DeepLispList(a:elts[1:]))
-    endif
-endfunction
-
 function! LispList(elts) abort
     if IsEmptyList(a:elts)
         return []
@@ -105,6 +212,10 @@ endfunction
 
 function! Cons(a, d) abort
     return [a:a, a:d]
+endfunction
+
+function! PrimitiveCons(l) abort
+    return [Car(a:l), Cadr(a:l)]
 endfunction
 
 function! Car(list) abort
@@ -204,26 +315,6 @@ function! DefineVar(env, var, val) abort
     let a:env[a:var] = a:val
 endfunction
 
-function! StrToVim(expr) abort
-    if a:expr =~ s:NUMBER_R
-        return a:expr - 0
-    elseif a:expr =~ s:STRING_CONST_R
-        return a:expr
-    elseif a:expr =~? s:VARNAME_R
-        return a:expr
-    elseif a:expr =~? s:PRIMOP_R
-        return a:expr
-    elseif a:expr =~? s:BOOL_R
-        return a:expr
-    elseif a:expr =~? "^'.*$"
-        return StrToVim("(quote "..strcharpart(a:expr, 1)..")")
-    elseif a:expr =~ '^(.*'
-        return DeepLispList(StringToList(a:expr))
-    else
-        throw "Invalid expr: "..a:expr
-    endif
-endfunction
-
 function! ParseStringLiteral(expr) abort
     let end = strlen(a:expr)
     let buf = [strgetchar(a:expr, 0)]
@@ -243,50 +334,13 @@ function! ParseStringLiteral(expr) abort
     return [buf, i+1]
 endfunction
 
-function! StringToList(expr) abort
-    let expr_len = SubExprLen(a:expr)
-    if expr_len == -1
-        throw "Unterminated expression: "..string(a:expr)
-    elseif expr_len != strlen(a:expr)
-        throw "Unbalanced parentheses: "..string(a:expr)
-    endif
-    let l = []
-    let buf = []
-    let chars = substitute(a:expr, s:OUTER_PARENS_R, '', 'g')
-    let i = 0
-    while i < strlen(chars)
-        let char = strgetchar(chars, i)
-        if char == s:LEFT_PAREN
-            let subexpr_len = SubExprLen(strcharpart(chars, i))
-            let sublist = StringToList(strcharpart(chars, i, subexpr_len))
-            let l = add(l, sublist)
-            let i += subexpr_len
-        elseif IsWhiteSpace(char)
-            if len(buf) > 0
-                let l = add(l, StrToVim(list2str(buf)))
-                let buf = []
-            endif
-            let i += 1
-        elseif char == s:STR_DELIM
-            if !IsEmptyList(buf)
-                throw "Invalid string literal: "..strcharpart(chars, i)
-            endif
-            let [string_chars, length] = ParseStringLiteral(strcharpart(chars, i))
-            let l = add(l, StrToVim(list2str(string_chars)))
-            let i += length
-        else
-            let buf = add(buf, char)
-            let i += 1
-        endif
-    endwhile
-    if len(buf) > 0
-        let l = add(l, StrToVim(list2str(buf)))
-    endif
-    return l
-endfunction
-
 function ApplyTransformers(expr) abort
-    if type(a:expr) != v:t_list || type(Car(a:expr)) == v:t_list
+    if type(a:expr) != v:t_list
+        if a:expr =~? "^'.*$"
+            return TransformQuote(a:expr)
+        endif
+        return a:expr
+    elseif type(Car(a:expr)) == v:t_list
         return a:expr
     elseif has_key(g:VL_TRANSFORMERS, Car(a:expr))
         return get(g:VL_TRANSFORMERS, Car(a:expr))(a:expr)
@@ -409,6 +463,10 @@ function! CondToIf(expr) abort
     return TransformCond(clauses)
 endfunction
 
+function! TransformQuote(expr) abort
+    return StrToVim("(quote "..strcharpart(a:expr, 1)..")")
+endfunction
+
 function! IsTrue(expr) abort
     return a:expr != s:FALSE
 endfunction
@@ -453,6 +511,7 @@ endfunction
 
 let g:VL_INITIAL_ENV = {
             \'+': ['primitive', funcref('VlAdd')],
+            \'cons': ['primitive', funcref('PrimitiveCons')],
             \'#t': s:TRUE,
             \'#f': s:FALSE,
             \}
