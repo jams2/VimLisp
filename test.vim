@@ -60,4 +60,6 @@ call RunEvalTests([
             \[11, '(cond (else 11))'],
             \[17, '(cond (#f 11) (#f 13) (else 17))'],
             \[17, '(cond (#f 11) (else (define x 7) (set! x 17) x))'],
+            \["x", "'x"],
+            \[[1, [2, [3, []]]], "'(1 2 3)"],
             \])

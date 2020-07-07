@@ -1,7 +1,4 @@
-let g:VL_TRANSFORMERS = {
-            \'let': funcref('LetToLambda'),
-            \'cond': funcref('CondToIf'),
-            \}
+let g:VL_TRANSFORMERS = {}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
 let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
@@ -18,6 +15,63 @@ let s:TAB = 9
 let s:NEWLINE = 13
 let s:TRUE = '#t'
 let s:FALSE = '#f'
+
+function! VlEval(expr, env=g:VL_INITIAL_ENV) abort
+    let vim_repr = StrToVim(a:expr)
+    return VlAnalyze(vim_repr)(a:env, s:END_CONT)
+endfunction
+
+function! VlAnalyze(expr) abort
+    let expr = ApplyTransformers(a:expr)
+    if type(expr) == v:t_number
+        return {env, k -> k(expr)}
+    elseif type(expr) == v:t_string && expr =~ s:STRING_CONST_R
+        return {env, k -> k(expr)}
+    elseif type(expr) == v:t_string
+        return {env, k -> k(ApplyEnv(env, expr))}
+    elseif type(expr[0]) == v:t_list
+        return GenApplication(expr)
+    elseif expr[0] =~? '^quote$'
+        return {env, k -> Cadr(expr)}
+    elseif expr[0] =~? '^lambda$'
+        return GenProc(expr)
+    elseif expr[0] =~? '^if$'
+        return GenCond(expr)
+    elseif expr[0] =~? '^begin$'
+        return GenSequence(Cdr(expr))
+    elseif expr[0] =~? '^define$'
+        return GenDefine(expr)
+    elseif expr[0] =~? '^set!$'
+        return GenSetBang(expr)
+    elseif expr[0] =~? '^call/cc$'
+        return GenCallCC(expr)
+    elseif type(expr) == v:t_list
+        return GenApplication(expr)
+    else
+        throw "Invalid expression: "..expr
+    endif
+endfunction
+
+function! ExecProc(rator, rands, k)
+    if Car(a:rator) =~? '^primitive$'
+        return a:k(Cdr(a:rator)(a:rands))
+    elseif Car(a:rator) =~? '^cont-primitive$'
+        return Cdr(a:rator)(Car(a:rands))
+    elseif Car(a:rator) =~? '^proc$'
+        let Body = ProcBody(a:rator)
+        let env = ProcEnv(a:rator)
+        let params = ProcParams(a:rator)
+        let result = Body(ExtendEnv(env, params, a:rands), a:k)
+        return result
+    elseif Car(a:rator) =~? '^cont$'
+        let Body = ProcBody(a:rator)
+        let env = ProcEnv(a:rator)
+        let params = ProcParams(a:rator)
+        let args = Cons(extend(['cont-primitive'], a:rands), [])
+        let result = Body(ExtendEnv(env, params, args), a:k)
+        return result
+    endif
+endfunction
 
 function! IsEmptyList(obj) abort
     return type(a:obj) == v:t_list && a:obj == []
@@ -161,6 +215,8 @@ function! StrToVim(expr) abort
         return a:expr
     elseif a:expr =~? s:BOOL_R
         return a:expr
+    elseif a:expr =~? "^'.*$"
+        return StrToVim("(quote "..strcharpart(a:expr, 1)..")")
     elseif a:expr =~ '^(.*'
         return DeepLispList(StringToList(a:expr))
     else
@@ -238,11 +294,6 @@ function ApplyTransformers(expr) abort
     return a:expr
 endfunction
 
-function! VlEval(expr, env=g:VL_INITIAL_ENV) abort
-    let vim_repr = StrToVim(a:expr)
-    return VlAnalyze(vim_repr)(a:env, s:END_CONT)
-endfunction
-
 function! Sequentially(proc1, proc2) abort
     return {env, k -> a:proc1(env, {x -> a:proc2(env, k)})}
 endfunction
@@ -269,27 +320,6 @@ endfunction
 
 function! ProcBody(proc) abort
     return Caddr(a:proc)
-endfunction
-
-function! ExecProc(rator, rands, k)
-    if Car(a:rator) =~? '^primitive$'
-        return a:k(Cdr(a:rator)(a:rands))
-    elseif Car(a:rator) =~? '^cont-primitive$'
-        return Cdr(a:rator)(Car(a:rands))
-    elseif Car(a:rator) =~? '^proc$'
-        let Body = ProcBody(a:rator)
-        let env = ProcEnv(a:rator)
-        let params = ProcParams(a:rator)
-        let result = Body(ExtendEnv(env, params, a:rands), a:k)
-        return result
-    elseif Car(a:rator) =~? '^cont$'
-        let Body = ProcBody(a:rator)
-        let env = ProcEnv(a:rator)
-        let params = ProcParams(a:rator)
-        let args = Cons(extend(['cont-primitive'], a:rands), [])
-        let result = Body(ExtendEnv(env, params, args), a:k)
-        return result
-    endif
 endfunction
 
 function! EvalClosureList(l, env, k) abort
@@ -398,35 +428,6 @@ function! GenSetBang(expr) abort
     return {env, k -> Val_closure(env, Cont(env, k))}
 endfunction
 
-function! VlAnalyze(expr) abort
-    let expr = ApplyTransformers(a:expr)
-    if type(expr) == v:t_number
-        return {env, k -> k(expr)}
-    elseif type(expr) == v:t_string && expr =~ s:STRING_CONST_R
-        return {env, k -> k(expr)}
-    elseif type(expr) == v:t_string
-        return {env, k -> k(ApplyEnv(env, expr))}
-    elseif type(expr[0]) == v:t_list
-        return GenApplication(expr)
-    elseif expr[0] =~? '^lambda$'
-        return GenProc(expr)
-    elseif expr[0] =~? '^if$'
-        return GenCond(expr)
-    elseif expr[0] =~? '^begin$'
-        return GenSequence(Cdr(expr))
-    elseif expr[0] =~? '^define$'
-        return GenDefine(expr)
-    elseif expr[0] =~? '^set!$'
-        return GenSetBang(expr)
-    elseif expr[0] =~? '^call/cc$'
-        return GenCallCC(expr)
-    elseif type(expr) == v:t_list
-        return GenApplication(expr)
-    else
-        throw "Invalid expression: "..expr
-    endif
-endfunction
-
 function! VlAdd(args) abort
     let total = 0
     let l = a:args
@@ -437,8 +438,32 @@ function! VlAdd(args) abort
     return total
 endfunction
 
+function! RegisterTransformer(name, funcref) abort
+    if has_key(g:VL_TRANSFORMERS, a:name)
+        throw "Duplicate syntax transformer: "..a:name
+    endif
+    let g:VL_TRANSFORMERS[a:name] = a:funcref
+endfunction
+
+function! RegisterTransformers(transformers) abort
+    for [name, Transformer] in a:transformers
+        call RegisterTransformer(name, Transformer)
+    endfor
+endfunction
+
 let g:VL_INITIAL_ENV = {
             \'+': ['primitive', funcref('VlAdd')],
             \'#t': s:TRUE,
             \'#f': s:FALSE,
             \}
+
+function! VlEvalCommand(expr) abort
+    echo VlEval(a:expr)
+endfunction
+
+call RegisterTransformers([
+            \['let', funcref('LetToLambda')],
+            \['cond', funcref('CondToIf')],
+            \])
+
+command! -nargs=* VlEval :call VlEvalCommand(<q-args>)
