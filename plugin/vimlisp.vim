@@ -3,7 +3,8 @@ let g:VL_F = '#f'
 let g:VL_INITIAL_ENV = vlenv#BuildInitialEnv()
 
 function! VlEvalCommand(expr) abort
-    echo vl#Eval(a:expr)
+    let val = vl#Eval(a:expr)
+    echo vlutils#PrettyPrint(val)
 endfunction
 
 function! VlRunTests() abort

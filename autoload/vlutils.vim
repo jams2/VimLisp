@@ -11,3 +11,19 @@ function! vlutils#FlattenList(l) abort
     endwhile
     return flat
 endfunction
+
+function! vlutils#PrintPair(obj) abort
+endfunction
+
+function! vlutils#PrintList(obj) abort
+    if type(vl#Cdr(a:obj)) != v:t_list
+        return vlutils#PrintPair(a:obj)
+    endif
+    let flat = vlutils#FlattenList(a:obj)
+    let elts = map(flat, {_, x -> vlutils#PrettyPrint(x)})
+    return "("..join(elts)..")"
+endfunction!
+
+function! vlutils#PrettyPrint(obj) abort
+    return vlbuiltins#ApplyGeneric('to_str', vl#LispList(a:obj))
+endfunction

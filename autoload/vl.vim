@@ -198,11 +198,11 @@ function! s:IsWhiteSpace(char) abort
     return a:char == s:SPACE || a:char == s:TAB || a:char == s:NEWLINE
 endfunction
 
-function! s:LispList(elts) abort
+function! vl#LispList(elts) abort
     if vlutils#IsEmptyList(a:elts)
         return []
     endif
-    return vl#Cons(a:elts[0], s:LispList(a:elts[1:]))
+    return vl#Cons(a:elts[0], vl#LispList(a:elts[1:]))
 endfunction
 
 function! s:LispLen(l) abort
@@ -369,7 +369,7 @@ endfunction
 function! s:AnalyzeCallCCProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr))
-    return {env, k -> k(s:LispList(["cont", params, Body, env]))}
+    return {env, k -> k(vl#LispList(["cont", params, Body, env]))}
 endfunction
 
 function! s:GenCallCC(expr) abort
@@ -380,7 +380,7 @@ endfunction
 function! s:GenProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr))
-    return {env, k -> k(s:LispList(["proc", params, Body, env]))}
+    return {env, k -> k(vl#LispList(["proc", params, Body, env]))}
 endfunction
 
 function! s:LetToLambda(expr) abort
@@ -413,9 +413,9 @@ function! s:TransformCond(clauses) abort
         let consequent = vl#Cons('begin', vl#Cdr(first))
     endif
     if vlutils#IsEmptyList(rest)
-        return s:LispList(['if', vl#Car(first), consequent, g:VL_F])
+        return vl#LispList(['if', vl#Car(first), consequent, g:VL_F])
     else
-        return s:LispList(['if', vl#Car(first), consequent, s:TransformCond(rest)])
+        return vl#LispList(['if', vl#Car(first), consequent, s:TransformCond(rest)])
     endif
 endfunction
 

@@ -1,16 +1,23 @@
+let s:PAIR_OPS = {
+            \'to_str': {x -> vlutils#PrintPair(x)},
+            \}
+
 let s:LIST_OPS = {
             \'eq?': {x, y -> x is y ? g:VL_T : g:VL_F},
             \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'to_str': {x -> vlutils#PrintList(x)},
             \}
 
 let s:NUMBER_OPS = {
             \'=': {x, y -> x == y ? g:VL_T : g:VL_F},
             \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'to_str': {x -> string(x)},
             \}
 
 let s:STRING_OPS = {
             \'eq?': {x, y -> x is y ? g:VL_T : g:VL_F},
             \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'to_str': {x -> list2str(x)},
             \}
 
 let s:UNTYPED_OPS = {
