@@ -27,6 +27,11 @@ function! RunEvalTests(tests) abort
     endfor
 endfunction
 
+call RunTests([
+            \[0, LispLen([])],
+            \[3, LispLen([1, [2, [3, []]]])],
+            \])
+
 call RunEvalTests([
             \[3, 'x'],
             \[-3, '-3'],
@@ -61,4 +66,14 @@ call RunEvalTests([
             \["x", "((lambda () 'x))"],
             \[[1, [2, [3, []]]], "(cons 1 '(2 3))"],
             \[[1, [2, [3, []]]], "(cons 1 (quote (2 3)))"],
+            \['#t', '(eq? 5 5)'],
+            \['#f', '(eq? 5 6)'],
+            \['#t', '(equal? 5 5)'],
+            \['#f', '(equal? 5 6)'],
+            \['#f', '(eq? "hello, world" "hello, world")'],
+            \['#t', '(equal? "hello, world" "hello, world")'],
+            \['#f', "(eq? '(1 2) '(1 2))"],
+            \['#t', "(equal? '(1 2) '(1 2))"],
+            \['#f', "(equal? '(1 2 3) '(1 2))"],
+            \['#t', "(begin (define l '(1 2)) (eq? l l))"],
             \])

@@ -175,7 +175,7 @@ function! DeepLispList(elts) abort
     endif
 endfunction
 
-function! ExecProc(rator, rands, k)
+function! ExecProc(rator, rands, k) abort
     if Car(a:rator) =~? '^primitive$'
         return a:k(Cdr(a:rator)(a:rands))
     elseif Car(a:rator) =~? '^cont-primitive$'
@@ -211,12 +211,62 @@ function! LispList(elts) abort
     return Cons(a:elts[0], LispList(a:elts[1:]))
 endfunction
 
+function! LispLen(l) abort
+    let list = a:l
+    let total = 0
+    while !IsEmptyList(list)
+        let total += 1
+        let list = Cdr(list)
+    endwhile
+    return total
+endfunction
+
 function! Cons(a, d) abort
     return [a:a, a:d]
 endfunction
 
 function! PrimitiveCons(l) abort
     return [Car(a:l), Cadr(a:l)]
+endfunction
+
+let s:LIST_OPS = {
+            \'eq?': {x, y -> x is y ? s:TRUE : s:FALSE}
+            \}
+
+let s:NUMBER_OPS = {
+            \'eq?': {x, y -> x == y? s:TRUE : s:FALSE}
+            \}
+
+let s:STRING_OPS = {
+            \'eq?': {x, y -> x is y ? s:TRUE : s:FALSE}
+            \}
+
+let s:BUILTINS = {
+            \v:t_list: s:LIST_OPS,
+            \v:t_number: s:NUMBER_OPS,
+            \v:t_string: s:STRING_OPS,
+            \}
+
+function! VlEqual(args) abort
+    if LispLen(a:args) != 2
+        throw "equal? - mismatched arity"
+    endif
+    let x = Car(a:args)
+    let y = Cadr(a:args)
+    return x == y ? s:TRUE : s:FALSE
+endfunction
+
+function VlEq(args) abort
+    echo a:args
+    if LispLen(a:args) != 2
+        throw "eq? - mismatched arity"
+    endif
+    let x = Car(a:args)
+    let y = Cadr(a:args)
+    if type(x) != type(y)
+        return s:FALSE
+    endif
+    return s:BUILTINS[type(x)]['eq?'](x, y)
 endfunction
 
 function! Car(list) abort
@@ -504,6 +554,8 @@ endfunction
 let g:VL_INITIAL_ENV = {
             \'+': ['primitive', funcref('VlAdd')],
             \'cons': ['primitive', funcref('PrimitiveCons')],
+            \'equal?': ['primitive', funcref('VlEqual')],
+            \'eq?': ['primitive', funcref('VlEq')],
             \'#t': s:TRUE,
             \'#f': s:FALSE,
             \}
