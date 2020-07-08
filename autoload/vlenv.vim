@@ -5,7 +5,7 @@ function! vlenv#BuildInitialEnv() abort
                 \'equal?': ['primitive',
                 \{args -> vlbuiltins#ApplyGeneric('equal?', args)}],
                 \'eq?': ['primitive', {args -> vlbuiltins#ApplyGeneric('eq?', args)}],
-                \'#t': g:VL_T,
-                \'#f': g:VL_F,
+                \'#t': g:vl_bool_t,
+                \'#f': g:vl_bool_f,
                 \}
 endfunction

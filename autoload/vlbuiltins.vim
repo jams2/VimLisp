@@ -3,47 +3,47 @@ let s:PAIR_OPS = {
             \}
 
 let s:SYM_OPS = {
-            \'eq?': {x, y -> x == y ? g:VL_T : g:VL_F},
-            \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'eq?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
+            \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \}
 
 let s:LIST_OPS = {
-            \'eq?': {x, y -> x is y ? g:VL_T : g:VL_F},
-            \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'eq?': {x, y -> x is y ? g:vl_bool_t : g:vl_bool_f},
+            \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'to_str': funcref("vlutils#PrintList"),
             \}
 
 let s:NUMBER_OPS = {
-            \'=': {x, y -> x == y ? g:VL_T : g:VL_F},
-            \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'=': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
+            \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'to_str': function("string"),
             \}
 
 let s:STRING_OPS = {
-            \'eq?': {x, y -> x is y ? g:VL_T : g:VL_F},
-            \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'eq?': {x, y -> x is y ? g:vl_bool_t : g:vl_bool_f},
+            \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'to_str': funcref("vlutils#PrintString")
             \}
 
 let s:UNTYPED_OPS = {
-            \'eq?': {x, y -> g:VL_F},
-            \'equal?': {x, y -> g:VL_F},
+            \'eq?': {x, y -> g:vl_bool_f},
+            \'equal?': {x, y -> g:vl_bool_f},
             \}
 
 let s:BUILTINS = {
             \v:t_list: s:LIST_OPS,
             \v:t_number: s:NUMBER_OPS,
             \v:t_string: s:SYM_OPS,
-            \'lstr': s:STRING_OPS,
-            \'untyped': s:UNTYPED_OPS,
-            \'pair': s:PAIR_OPS,
-            \'sym': s:PAIR_OPS,
+            \g:vl_t_lstr: s:STRING_OPS,
+            \g:vl_t_void: s:UNTYPED_OPS,
+            \g:vl_t_pair: s:PAIR_OPS,
+            \g:vl_t_sym: s:SYM_OPS,
             \}
 
 function! vlbuiltins#ApplyGeneric(op, args) abort
     let args = vlutils#FlattenList(a:args)
     let types = uniq(map(deepcopy(args), {_, x -> vl#TypeOf(x)}))
-    let type = len(types) == 1? types[0] : 'untyped'
+    let type = len(types) == 1? types[0] : g:vl_t_void
     if !has_key(s:BUILTINS[type], a:op)
         throw "Undefined operation on type "..type.." ("..a:op..")"
     endif

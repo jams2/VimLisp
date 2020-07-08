@@ -1,18 +1,10 @@
 let g:VL_TRANSFORMERS = {}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
-let s:OUTER_PARENS_R ='\(^(\)\|\()\)$'
 let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\+-]\+$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
 let s:BOOL_R = '^\(#t\)\|\(#f\)$'
-let s:QUOTE = 39
-let s:STR_DELIM = 34
-let s:LEFT_PAREN = 40
-let s:RIGHT_PAREN = 41
-let s:SPACE = 32
-let s:TAB = 9
-let s:NEWLINE = 13
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let tokens = split(substitute(a:expr, '\([()"'']\)', ' \1 ', 'g'))
@@ -27,9 +19,9 @@ function! vl#TypeOf(obj) abort
         if type(vl#Cdr(a:obj)) == v:t_list
             return v:t_list
         endif
-        return "pair"
+        return g:vl_t_pair
     elseif type(a:obj) == v:t_string
-        return "sym"
+        return g:vl_t_sym
     else
         return type(a:obj)
     endif
@@ -48,7 +40,7 @@ function! s:Parse(tokens) abort
         "if a:tokens[1] == "(" && index(a:tokens, ".") > 1
             "return vl#LispList(["quote", s:ParsePair(a:tokens[1:])])
         "endif
-        return vl#LispList(['quote', s:Parse(a:tokens[1:])])
+        return vl#LispList(["quote", s:Parse(a:tokens[1:])])
     endif
 endfunction
 
@@ -105,7 +97,7 @@ function! s:ParseString(tokens) abort
 endfunction
 
 function! s:StrFactory(str) abort
-    return ['vlobj', #{_t: 'lstr', _chars: str2list(a:str)}]
+    return ["vlobj", #{_t: g:vl_t_lstr, _chars: str2list(a:str)}]
 endfunction
 
 function! s:NestedNonTerminalLen(tokens, open="(", close=")") abort
@@ -164,19 +156,19 @@ function! s:Analyze(expr) abort
         return s:GenApplication(expr)
     elseif expr[0] == "vlobj"
         return {env, k -> k(vl#Cadr(expr))}
-    elseif expr[0] =~? '^quote$'
+    elseif expr[0] == "quote"
         return {env, k -> k(vl#Cadr(expr))}
-    elseif expr[0] =~? '^lambda$'
+    elseif expr[0] == "lambda"
         return s:GenProc(expr)
-    elseif expr[0] =~? '^if$'
+    elseif expr[0] == "if"
         return s:GenCond(expr)
-    elseif expr[0] =~? '^begin$'
+    elseif expr[0] == "begin"
         return s:GenSequence(vl#Cdr(expr))
-    elseif expr[0] =~? '^define$'
+    elseif expr[0] == "define"
         return s:GenDefine(expr)
-    elseif expr[0] =~? '^set!$'
+    elseif expr[0] == "set!"
         return s:GenSetBang(expr)
-    elseif expr[0] =~? '^call/cc$'
+    elseif expr[0] == "call/cc"
         return s:GenCallCC(expr)
     elseif type(expr) == v:t_list
         return s:GenApplication(expr)
@@ -215,14 +207,10 @@ function! s:ExecProc(rator, rands, k) abort
         let Body = s:ProcBody(a:rator)
         let env = s:ProcEnv(a:rator)
         let params = s:ProcParams(a:rator)
-        let args = vl#Cons(extend(['cont-primitive'], a:rands), [])
+        let args = vl#Cons(extend(["cont-primitive"], a:rands), [])
         let result = Body(s:ExtendEnv(env, params, args), a:k)
         return result
     endif
-endfunction
-
-function! s:IsWhiteSpace(char) abort
-    return a:char == s:SPACE || a:char == s:TAB || a:char == s:NEWLINE
 endfunction
 
 function! vl#LispList(elts) abort
@@ -415,7 +403,7 @@ function! s:LetToLambda(expr) abort
     let body = vl#Cddr(a:expr)
     let vars = s:LispMap({x -> vl#Car(x)}, bindings)
     let vals = s:LispMap({x -> vl#Cadr(x)}, bindings)
-    let lambda = vl#Cons('lambda', vl#Cons(vars, body))
+    let lambda = vl#Cons("lambda", vl#Cons(vars, body))
     return vl#Cons(lambda, vals)
 endfunction
 
@@ -432,17 +420,17 @@ function! s:TransformCond(clauses) abort
         if vlutils#IsEmptyList(vl#Cddr(first))
             return vl#Cadr(first)
         endif
-        return vl#Cons('begin', vl#Cdr(first))
+        return vl#Cons("begin", vl#Cdr(first))
     endif
     if vlutils#IsEmptyList(vl#Cddr(first))
         let consequent = vl#Cadr(first)
     else
-        let consequent = vl#Cons('begin', vl#Cdr(first))
+        let consequent = vl#Cons("begin", vl#Cdr(first))
     endif
     if vlutils#IsEmptyList(rest)
-        return vl#LispList(['if', vl#Car(first), consequent, g:VL_F])
+        return vl#LispList(["if", vl#Car(first), consequent, g:vl_bool_f])
     else
-        return vl#LispList(['if', vl#Car(first), consequent, s:TransformCond(rest)])
+        return vl#LispList(["if", vl#Car(first), consequent, s:TransformCond(rest)])
     endif
 endfunction
 
@@ -452,13 +440,13 @@ function! s:CondToIf(expr) abort
 endfunction
 
 function! s:IsTrue(expr) abort
-    return a:expr != g:VL_F
+    return a:expr != g:vl_bool_f
 endfunction
 
 function! s:GenCond(expr) abort
     let P_clsr = s:Analyze(vl#Cadr(a:expr))
     let C_clsr = {env, k -> s:Analyze(vl#Caddr(a:expr))(env, k)}
-    let alt = vlutils#IsEmptyList(vl#Cdddr(a:expr)) ? g:VL_F : vl#Cadddr(a:expr)
+    let alt = vlutils#IsEmptyList(vl#Cdddr(a:expr)) ? g:vl_bool_f : vl#Cadddr(a:expr)
     let A_clsr = {env, k -> s:Analyze(alt)(env, k)}
     let Cont = {env, k -> {res -> s:IsTrue(res) ? C_clsr(env, k) : A_clsr(env, k)}}
     return {env, k -> P_clsr(env, Cont(env, k))}
@@ -484,6 +472,6 @@ function! s:RegisterTransformers(transformers) abort
 endfunction
 
 call s:RegisterTransformers([
-            \['let', funcref('s:LetToLambda')],
-            \['cond', funcref('s:CondToIf')],
+            \["let", funcref("s:LetToLambda")],
+            \["cond", funcref("s:CondToIf")],
             \])
