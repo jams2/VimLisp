@@ -16,30 +16,45 @@ let s:NEWLINE = 13
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let tokens = split(substitute(a:expr, '\([()"'']\)', ' \1 ', 'g'))
-    let syntax = s:VlParse(tokens)
+    let syntax = s:Parse(tokens)
     if type(syntax) == v:t_list
         let syntax = s:DeepLispList(syntax)
     endif
-    return s:VlAnalyze(syntax)(a:env, s:END_CONT)
+    return s:Analyze(syntax)(a:env, s:END_CONT)
 endfunction
 
-function! s:VlParse(tokens) abort
-    if len(a:tokens) == 0
-        throw "Unterminated expression"
-    elseif len(a:tokens) == 1
-        return s:VlParseAtom(a:tokens[0])
-    elseif a:tokens[0] == "("
-        return s:VlParseList(a:tokens)
-    elseif a:tokens[0] == '"'
-        return s:VlParseString(a:tokens)
-    elseif a:tokens[0] == "'"
-        return ['quote', s:VlParse(a:tokens[1:])]
+function! vl#TypeOf(obj) abort
+    if type(a:obj) == v:t_dict
+        return get(a:obj, "_t")
+    elseif type(a:obj) == v:t_list
+        if type(vl#Cdr(a:obj)) == v:t_list
+            return v:t_list
+        endif
+        return "pair"
+    elseif type(a:obj) == v:t_string
+        return "sym"
+    else
+        return type(a:obj)
     endif
 endfunction
 
-function! s:VlParseList(tokens) abort
+function! s:Parse(tokens) abort
+    if len(a:tokens) == 0
+        throw "Unterminated expression"
+    elseif len(a:tokens) == 1
+        return s:ParseAtom(a:tokens[0])
+    elseif a:tokens[0] == "("
+        return s:ParseList(a:tokens)
+    elseif a:tokens[0] == '"'
+        return s:ParseString(a:tokens)
+    elseif a:tokens[0] == "'"
+        return ['quote', s:Parse(a:tokens[1:])]
+    endif
+endfunction
+
+function! s:ParseList(tokens) abort
     if a:tokens[0] != "("
-        throw "Invalid list structure -- s:VlParseList"
+        throw "Invalid list structure -- s:ParseList"
     endif
     let exprlist = []
     let i = 1  "skip open paren
@@ -47,32 +62,32 @@ function! s:VlParseList(tokens) abort
         let token = a:tokens[i]
         if token == "("
             let listlen = s:NestedNonTerminalLen(a:tokens[i:], "(", ")")
-            call add(exprlist, s:VlParseList(a:tokens[i:i+listlen]))
+            call add(exprlist, s:ParseList(a:tokens[i:i+listlen]))
             let i += listlen
         elseif token == ")"
             return exprlist
         elseif token == '"'
             let stringlen = s:NonTerminalLen(a:tokens[i:], '"')
-            call add(exprlist, s:VlParseString(a:tokens[i:i+stringlen-1]))
+            call add(exprlist, s:ParseString(a:tokens[i:i+stringlen-1]))
             let i += stringlen
         elseif token == "'"
             if a:tokens[i+1] == "("
                 let listlen = s:NestedNonTerminalLen(a:tokens[i+1:], "(", ")")
-                call add(exprlist, ["quote", s:VlParseList(a:tokens[i+1:i+listlen])])
+                call add(exprlist, ["quote", s:ParseList(a:tokens[i+1:i+listlen])])
                 let i += listlen + 1
             else
                 call add(exprlist, ["quote", a:tokens[i+1]])
                 let i += 2
             endif
         else
-            call add(exprlist, s:VlParseAtom(token))
+            call add(exprlist, s:ParseAtom(token))
             let i += 1
         endif
     endwhile
     return exprlist
 endfunction
 
-function! s:VlParseString(tokens) abort
+function! s:ParseString(tokens) abort
     if a:tokens[0] != '"' || a:tokens[-1] != '"'
         throw "Invalid string literal: "..string(join(a:tokens))
     endif
@@ -80,7 +95,7 @@ function! s:VlParseString(tokens) abort
 endfunction
 
 function! s:StrFactory(str) abort
-    return ['str', #{_chars: str2list(a:str)}]
+    return ['vlobj', #{_t: 'lstr', _chars: str2list(a:str)}]
 endfunction
 
 function! s:NestedNonTerminalLen(tokens, open, close) abort
@@ -113,7 +128,7 @@ function! s:NonTerminalLen(tokens, delim) abort
     return -1
 endfunction
 
-function! s:VlParseAtom(token) abort
+function! s:ParseAtom(token) abort
     if a:token =~ s:NUMBER_R
         return a:token - 0
     elseif a:token =~ s:STRING_CONST_R
@@ -127,7 +142,7 @@ function! s:VlParseAtom(token) abort
     endif
 endfunction
 
-function! s:VlAnalyze(expr) abort
+function! s:Analyze(expr) abort
     let expr = s:ApplyTransformers(a:expr)
     if type(expr) == v:t_number
         return {env, k -> k(expr)}
@@ -135,8 +150,8 @@ function! s:VlAnalyze(expr) abort
         return {env, k -> k(s:ApplyEnv(env, expr))}
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
-    elseif expr[0] =~? '^str$'
-        return {env, k -> k(get(vl#Cadr(expr), "_chars"))}
+    elseif expr[0] == "vlobj"
+        return {env, k -> k(vl#Cadr(expr))}
     elseif expr[0] =~? '^quote$'
         return {env, k -> k(vl#Cadr(expr))}
     elseif expr[0] =~? '^lambda$'
@@ -314,7 +329,7 @@ function! s:Sequentially(proc1, proc2) abort
 endfunction
 
 function! s:GenSequence(expr) abort
-    let Analyzer = {x -> s:VlAnalyze(x)}
+    let Analyzer = {x -> s:Analyze(x)}
     let closures = s:LispMap(Analyzer, a:expr)
     let C1 = vl#Car(closures)
     while !vlutils#IsEmptyList(vl#Cdr(closures))
@@ -355,13 +370,13 @@ function! s:RatorCont(rands, env, k) abort
 endfunction
 
 function! s:GenApplication(expr) abort
-    let Rator = s:VlAnalyze(vl#Car(a:expr))
-    let rands = s:LispMap({x -> s:VlAnalyze(x)}, vl#Cdr(a:expr))
+    let Rator = s:Analyze(vl#Car(a:expr))
+    let rands = s:LispMap({x -> s:Analyze(x)}, vl#Cdr(a:expr))
     return {env, k -> Rator(env, s:RatorCont(rands, env, k))}
 endfunction
 
 function! s:GenDefine(expr) abort
-    let ValClosure = s:VlAnalyze(vl#Caddr(a:expr))
+    let ValClosure = s:Analyze(vl#Caddr(a:expr))
     let InnerClosure = {env, k -> {val -> k(s:DefineVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> ValClosure(env, InnerClosure(env, k))}
 endfunction
@@ -429,16 +444,16 @@ function! s:IsTrue(expr) abort
 endfunction
 
 function! s:GenCond(expr) abort
-    let P_clsr = s:VlAnalyze(vl#Cadr(a:expr))
-    let C_clsr = {env, k -> s:VlAnalyze(vl#Caddr(a:expr))(env, k)}
+    let P_clsr = s:Analyze(vl#Cadr(a:expr))
+    let C_clsr = {env, k -> s:Analyze(vl#Caddr(a:expr))(env, k)}
     let alt = vlutils#IsEmptyList(vl#Cdddr(a:expr)) ? g:VL_F : vl#Cadddr(a:expr)
-    let A_clsr = {env, k -> s:VlAnalyze(alt)(env, k)}
+    let A_clsr = {env, k -> s:Analyze(alt)(env, k)}
     let Cont = {env, k -> {res -> s:IsTrue(res) ? C_clsr(env, k) : A_clsr(env, k)}}
     return {env, k -> P_clsr(env, Cont(env, k))}
 endfunction
 
 function! s:GenSetBang(expr) abort
-    let Val_closure = s:VlAnalyze(vl#Caddr(a:expr))
+    let Val_closure = s:Analyze(vl#Caddr(a:expr))
     let Cont = {env, k -> {val -> k(s:SetVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> Val_closure(env, Cont(env, k))}
 endfunction

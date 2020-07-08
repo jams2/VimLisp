@@ -12,6 +12,10 @@ function! vlutils#FlattenList(l) abort
     return flat
 endfunction
 
+function! vlutils#PrintString(obj) abort
+    return list2str(get(a:obj, "_chars"))
+endfunction
+
 function! vlutils#PrintPair(obj) abort
 endfunction
 
@@ -25,5 +29,5 @@ function! vlutils#PrintList(obj) abort
 endfunction!
 
 function! vlutils#PrettyPrint(obj) abort
-    return vlbuiltins#ApplyGeneric('to_str', vl#LispList(a:obj))
+    return vlbuiltins#ApplyGeneric('to_str', vl#LispList([a:obj]))
 endfunction

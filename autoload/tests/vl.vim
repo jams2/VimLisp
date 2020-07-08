@@ -25,11 +25,16 @@ function! tests#vl#TestVimLisp() abort
         endfor
     endfunction
 
+    call RunTests([
+                \["hello, world", vlutils#PrettyPrint(vl#Eval('"hello, world"'))],
+                \["(1 2 3)", vlutils#PrettyPrint(vl#Eval("'(1 2 3)"))],
+                \["13", vlutils#PrettyPrint(vl#Eval("13"))],
+                \])
+
     call RunEvalTests([
                 \[3, 'x'],
                 \[-3, '-3'],
                 \[123, 123],
-                \[str2list("hello"), '"hello"'],
                 \[0, "(define x 3)"],
                 \[0, '(define x "hello, world")'],
                 \[0, '(set! x 3)'],

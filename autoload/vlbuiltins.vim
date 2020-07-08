@@ -2,10 +2,15 @@ let s:PAIR_OPS = {
             \'to_str': {x -> vlutils#PrintPair(x)},
             \}
 
+let s:SYM_OPS = {
+            \'eq?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
+            \}
+
 let s:LIST_OPS = {
             \'eq?': {x, y -> x is y ? g:VL_T : g:VL_F},
             \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
-            \'to_str': {x -> vlutils#PrintList(x)},
+            \'to_str': funcref("vlutils#PrintList"),
             \}
 
 let s:NUMBER_OPS = {
@@ -17,7 +22,7 @@ let s:NUMBER_OPS = {
 let s:STRING_OPS = {
             \'eq?': {x, y -> x is y ? g:VL_T : g:VL_F},
             \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
-            \'to_str': {x -> list2str(x)},
+            \'to_str': funcref("vlutils#PrintString")
             \}
 
 let s:UNTYPED_OPS = {
@@ -28,13 +33,16 @@ let s:UNTYPED_OPS = {
 let s:BUILTINS = {
             \v:t_list: s:LIST_OPS,
             \v:t_number: s:NUMBER_OPS,
-            \v:t_string: s:STRING_OPS,
+            \v:t_string: s:SYM_OPS,
+            \'lstr': s:STRING_OPS,
             \'untyped': s:UNTYPED_OPS,
+            \'pair': s:PAIR_OPS,
+            \'sym': s:PAIR_OPS,
             \}
 
 function! vlbuiltins#ApplyGeneric(op, args) abort
     let args = vlutils#FlattenList(a:args)
-    let types = uniq(map(deepcopy(args), {_, x -> type(x)}))
+    let types = uniq(map(deepcopy(args), {_, x -> vl#TypeOf(x)}))
     let type = len(types) == 1? types[0] : 'untyped'
     if !has_key(s:BUILTINS[type], a:op)
         throw "Undefined operation on type "..type.." ("..a:op..")"
