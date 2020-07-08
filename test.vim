@@ -66,8 +66,6 @@ call RunEvalTests([
             \["x", "((lambda () 'x))"],
             \[[1, [2, [3, []]]], "(cons 1 '(2 3))"],
             \[[1, [2, [3, []]]], "(cons 1 (quote (2 3)))"],
-            \['#t', '(eq? 5 5)'],
-            \['#f', '(eq? 5 6)'],
             \['#t', '(equal? 5 5)'],
             \['#f', '(equal? 5 6)'],
             \['#f', '(eq? "hello, world" "hello, world")'],

@@ -230,43 +230,50 @@ function! PrimitiveCons(l) abort
 endfunction
 
 let s:LIST_OPS = {
-            \'eq?': {x, y -> x is y ? s:TRUE : s:FALSE}
+            \'eq?': {x, y -> x is y ? s:TRUE : s:FALSE},
+            \'equal?': {x, y -> x == y ? s:TRUE : s:FALSE},
             \}
 
 let s:NUMBER_OPS = {
-            \'eq?': {x, y -> x == y? s:TRUE : s:FALSE}
+            \'=': {x, y -> x == y ? s:TRUE : s:FALSE},
+            \'equal?': {x, y -> x == y ? s:TRUE : s:FALSE},
             \}
 
 let s:STRING_OPS = {
-            \'eq?': {x, y -> x is y ? s:TRUE : s:FALSE}
+            \'eq?': {x, y -> x is y ? s:TRUE : s:FALSE},
+            \'equal?': {x, y -> x == y ? s:TRUE : s:FALSE},
+            \}
+
+let s:UNTYPED_OPS = {
+            \'eq?': {x, y -> s:FALSE},
+            \'equal?': {x, y -> s:FALSE},
             \}
 
 let s:BUILTINS = {
             \v:t_list: s:LIST_OPS,
             \v:t_number: s:NUMBER_OPS,
             \v:t_string: s:STRING_OPS,
+            \'untyped': s:UNTYPED_OPS,
             \}
 
-function! VlEqual(args) abort
-    if LispLen(a:args) != 2
-        throw "equal? - mismatched arity"
+function! ApplyGeneric(op, args) abort
+    let args = FlattenList(a:args)
+    let types = uniq(map(deepcopy(args), {_, x -> type(x)}))
+    let type = len(types) == 1? types[0] : 'untyped'
+    if !has_key(s:BUILTINS[type], a:op)
+        throw "Undefined operation on type "..type.." ("..a:op..")"
     endif
-    let x = Car(a:args)
-    let y = Cadr(a:args)
-    return x == y ? s:TRUE : s:FALSE
+    return call(get(s:BUILTINS[type], a:op), args)
 endfunction
 
-function VlEq(args) abort
-    echo a:args
-    if LispLen(a:args) != 2
-        throw "eq? - mismatched arity"
-    endif
-    let x = Car(a:args)
-    let y = Cadr(a:args)
-    if type(x) != type(y)
-        return s:FALSE
-    endif
-    return s:BUILTINS[type(x)]['eq?'](x, y)
+function! FlattenList(l) abort
+    let list = a:l
+    let flat = []
+    while !IsEmptyList(list)
+        call add(flat, Car(list))
+        let list = Cdr(list)
+    endwhile
+    return flat
 endfunction
 
 function! Car(list) abort
@@ -554,8 +561,8 @@ endfunction
 let g:VL_INITIAL_ENV = {
             \'+': ['primitive', funcref('VlAdd')],
             \'cons': ['primitive', funcref('PrimitiveCons')],
-            \'equal?': ['primitive', funcref('VlEqual')],
-            \'eq?': ['primitive', funcref('VlEq')],
+            \'equal?': ['primitive', {args -> ApplyGeneric('equal?', args)}],
+            \'eq?': ['primitive', {args -> ApplyGeneric('eq?', args)}],
             \'#t': s:TRUE,
             \'#f': s:FALSE,
             \}
