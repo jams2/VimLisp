@@ -16,13 +16,9 @@ let s:NEWLINE = 13
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let tokens = split(substitute(a:expr, '\([()"'']\)', ' \1 ', 'g'))
-    let [syntax, _] = s:Parse(tokens)
-    "if type(syntax) == v:t_list
-        "let syntax = s:DeepLispList(syntax)
-    "endif
+    let syntax = s:Parse(tokens)
     return s:Analyze(syntax)(a:env, s:END_CONT)
 endfunction
-
 
 function! vl#TypeOf(obj) abort
     if type(a:obj) == v:t_dict
@@ -43,60 +39,53 @@ function! s:Parse(tokens) abort
     if len(a:tokens) == 0
         throw "Unterminated expression"
     elseif len(a:tokens) == 1
-        return [s:ParseAtom(a:tokens[0]), 1]
+        return s:ParseAtom(a:tokens[0])
     elseif a:tokens[0] == "("
-        let [obj, parsed] = s:ParseList(a:tokens)
-        return [vl#LispList(obj), parsed]
+        return vl#LispList(s:ParseList(a:tokens))
     elseif a:tokens[0] == '"'
-        let [obj, parsed] = s:ParseString(a:tokens)
-        return [vl#LispList(obj), parsed]
+        return vl#LispList(s:ParseString(a:tokens))
     elseif a:tokens[0] == "'"
         "if a:tokens[1] == "(" && index(a:tokens, ".") > 1
             "return vl#LispList(["quote", s:ParsePair(a:tokens[1:])])
         "endif
-        let [obj, parsed] = s:Parse(a:tokens[1:])
-        return [vl#LispList(['quote', obj]), parsed]
+        return vl#LispList(['quote', s:Parse(a:tokens[1:])])
     endif
 endfunction
 
 function! s:ParseList(tokens) abort
-    if a:tokens[0] != "("
+    if a:tokens[0] != "(" || a:tokens[-1] != ")"
         throw "Invalid list structure -- s:ParseList"
     endif
+    let tokens = a:tokens[1:-2]
     let exprlist = []
-    let i = 1  "skip open paren
-    while i < len(a:tokens)
-        let token = a:tokens[i]
-        if token == "("
-            let sublistlen = s:NestedNonTerminalLen(a:tokens[i:], "(", ")")
-            let [obj, parsed] = s:Parse(a:tokens[i:i+sublistlen-1])
-            call add(exprlist, obj)
-            let i += parsed
-        elseif token == ")"
-            return [exprlist, i+1]
+    let i = 0  "skip open paren
+    while i < len(tokens)
+        let token = tokens[i]
+        if token == ")"
+            throw "Unexpected list termination -- s:ParseList"
+        elseif token == "("
+            let sublistlen = s:NestedNonTerminalLen(tokens[i:])
+            call add(exprlist, s:Parse(tokens[i:i+sublistlen-1]))
+            let i += sublistlen
         elseif token == '"'
-            let stringlen = s:NonTerminalLen(a:tokens[i:], '"')
-            let [obj, parsed] = s:Parse(a:tokens[i:i+stringlen-1])
-            call add(exprlist, obj)
-            let i += parsed
+            let stringlen = s:NonTerminalLen(tokens[i:], '"')
+            call add(exprlist, s:Parse(tokens[i:i+stringlen-1]))
+            let i += stringlen
         elseif token == "'"
-            if a:tokens[i+1] == "("
-                let quotelen = s:NestedNonTerminalLen(a:tokens[i+1:], "(", ")")
-                let [next, _] = s:Parse(a:tokens[i+1:i+quotelen])
-                call add(exprlist, vl#LispList(['quote', next]))
+            if tokens[i+1] == "("
+                let quotelen = s:NestedNonTerminalLen(tokens[i+1:])
+                call add(exprlist, s:Parse(tokens[i:i+quotelen]))
                 let i += 1 + quotelen
             else
-                let [next, _] = s:Parse(a:tokens[i+1])
-                call add(exprlist, vl#LispList(['quote', next]))
+                call add(exprlist, s:Parse(tokens[i:i+1]))
                 let i += 2
             endif
         else
-            let [obj, parsed] = s:Parse(a:tokens[i:i])
-            call add(exprlist, obj)
-            let i += parsed
+            call add(exprlist, s:Parse(tokens[i:i]))
+            let i += 1
         endif
     endwhile
-    return [exprlist, i+1]
+    return exprlist
 endfunction
 
 function! s:ParsePair(tokens) abort
@@ -112,14 +101,14 @@ function! s:ParseString(tokens) abort
     if a:tokens[0] != '"' || a:tokens[-1] != '"'
         throw "Invalid string literal: "..string(join(a:tokens))
     endif
-    return [s:StrFactory(join(a:tokens[1:-2])), len(a:tokens)]
+    return s:StrFactory(join(a:tokens[1:-2]))
 endfunction
 
 function! s:StrFactory(str) abort
     return ['vlobj', #{_t: 'lstr', _chars: str2list(a:str)}]
 endfunction
 
-function! s:NestedNonTerminalLen(tokens, open, close) abort
+function! s:NestedNonTerminalLen(tokens, open="(", close=")") abort
     let open_count = 0
     for i in range(len(a:tokens))
         let token = a:tokens[i]
