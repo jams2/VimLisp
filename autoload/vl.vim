@@ -16,12 +16,13 @@ let s:NEWLINE = 13
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let tokens = split(substitute(a:expr, '\([()"'']\)', ' \1 ', 'g'))
-    let syntax = s:Parse(tokens)
-    if type(syntax) == v:t_list
-        let syntax = s:DeepLispList(syntax)
-    endif
+    let [syntax, _] = s:Parse(tokens)
+    "if type(syntax) == v:t_list
+        "let syntax = s:DeepLispList(syntax)
+    "endif
     return s:Analyze(syntax)(a:env, s:END_CONT)
 endfunction
+
 
 function! vl#TypeOf(obj) abort
     if type(a:obj) == v:t_dict
@@ -42,13 +43,19 @@ function! s:Parse(tokens) abort
     if len(a:tokens) == 0
         throw "Unterminated expression"
     elseif len(a:tokens) == 1
-        return s:ParseAtom(a:tokens[0])
+        return [s:ParseAtom(a:tokens[0]), 1]
     elseif a:tokens[0] == "("
-        return s:ParseList(a:tokens)
+        let [obj, parsed] = s:ParseList(a:tokens)
+        return [vl#LispList(obj), parsed]
     elseif a:tokens[0] == '"'
-        return s:ParseString(a:tokens)
+        let [obj, parsed] = s:ParseString(a:tokens)
+        return [vl#LispList(obj), parsed]
     elseif a:tokens[0] == "'"
-        return ['quote', s:Parse(a:tokens[1:])]
+        "if a:tokens[1] == "(" && index(a:tokens, ".") > 1
+            "return vl#LispList(["quote", s:ParsePair(a:tokens[1:])])
+        "endif
+        let [obj, parsed] = s:Parse(a:tokens[1:])
+        return [vl#LispList(['quote', obj]), parsed]
     endif
 endfunction
 
@@ -61,37 +68,51 @@ function! s:ParseList(tokens) abort
     while i < len(a:tokens)
         let token = a:tokens[i]
         if token == "("
-            let listlen = s:NestedNonTerminalLen(a:tokens[i:], "(", ")")
-            call add(exprlist, s:ParseList(a:tokens[i:i+listlen]))
-            let i += listlen
+            let sublistlen = s:NestedNonTerminalLen(a:tokens[i:], "(", ")")
+            let [obj, parsed] = s:Parse(a:tokens[i:i+sublistlen-1])
+            call add(exprlist, obj)
+            let i += parsed
         elseif token == ")"
-            return exprlist
+            return [exprlist, i+1]
         elseif token == '"'
             let stringlen = s:NonTerminalLen(a:tokens[i:], '"')
-            call add(exprlist, s:ParseString(a:tokens[i:i+stringlen-1]))
-            let i += stringlen
+            let [obj, parsed] = s:Parse(a:tokens[i:i+stringlen-1])
+            call add(exprlist, obj)
+            let i += parsed
         elseif token == "'"
             if a:tokens[i+1] == "("
-                let listlen = s:NestedNonTerminalLen(a:tokens[i+1:], "(", ")")
-                call add(exprlist, ["quote", s:ParseList(a:tokens[i+1:i+listlen])])
-                let i += listlen + 1
+                let quotelen = s:NestedNonTerminalLen(a:tokens[i+1:], "(", ")")
+                let [next, _] = s:Parse(a:tokens[i+1:i+quotelen])
+                call add(exprlist, vl#LispList(['quote', next]))
+                let i += 1 + quotelen
             else
-                call add(exprlist, ["quote", a:tokens[i+1]])
+                let [next, _] = s:Parse(a:tokens[i+1])
+                call add(exprlist, vl#LispList(['quote', next]))
                 let i += 2
             endif
         else
-            call add(exprlist, s:ParseAtom(token))
-            let i += 1
+            let [obj, parsed] = s:Parse(a:tokens[i:i])
+            call add(exprlist, obj)
+            let i += parsed
         endif
     endwhile
-    return exprlist
+    return [exprlist, i+1]
+endfunction
+
+function! s:ParsePair(tokens) abort
+    if a:tokens[0] != "(" || index(a:tokens, ".") == -1
+        throw "Invalid pair structure -- s:ParseList"
+    endif
+    let exprlist = s:ParseList(tokens)
+    if len(exprlist) != 3
+    endif
 endfunction
 
 function! s:ParseString(tokens) abort
     if a:tokens[0] != '"' || a:tokens[-1] != '"'
         throw "Invalid string literal: "..string(join(a:tokens))
     endif
-    return s:StrFactory(join(a:tokens[1:-2]))
+    return [s:StrFactory(join(a:tokens[1:-2])), len(a:tokens)]
 endfunction
 
 function! s:StrFactory(str) abort
@@ -136,6 +157,8 @@ function! s:ParseAtom(token) abort
     elseif a:token =~? s:SYMBOL_R
         return a:token
     elseif a:token =~? s:BOOL_R
+        return a:token
+    elseif a:token == "."
         return a:token
     else
         throw "Invalid token: "..a:token

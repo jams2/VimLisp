@@ -1,5 +1,5 @@
 let s:PAIR_OPS = {
-            \'to_str': {x -> vlutils#PrintPair(x)},
+            \'to_str': funcref("vlutils#PrintPair"),
             \}
 
 let s:SYM_OPS = {
@@ -16,7 +16,7 @@ let s:LIST_OPS = {
 let s:NUMBER_OPS = {
             \'=': {x, y -> x == y ? g:VL_T : g:VL_F},
             \'equal?': {x, y -> x == y ? g:VL_T : g:VL_F},
-            \'to_str': {x -> string(x)},
+            \'to_str': function("string"),
             \}
 
 let s:STRING_OPS = {
