@@ -5,9 +5,15 @@ let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\+-]\+$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
 let s:BOOL_R = '^\(#t\)\|\(#f\)$'
+let s:TOKEN_R = '\([()"'']\)'
+let s:R_PAREN = ")"
+let s:L_PAREN = "("
+let s:D_QUOTE = '"'
+let s:QUOTE = "'"
+let s:DOT = "."
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
-    let tokens = split(substitute(a:expr, '\([()"'']\)', ' \1 ', 'g'))
+    let tokens = split(substitute(a:expr, s:TOKEN_R, ' \1 ', 'g'))
     let syntax = s:Parse(tokens)
     return s:Analyze(syntax)(a:env, s:END_CONT)
 endfunction
@@ -29,23 +35,30 @@ endfunction
 
 function! s:Parse(tokens) abort
     if len(a:tokens) == 0
-        throw "Unterminated expression"
+        throw "unterminated expression"
+    elseif a:tokens[0] == s:QUOTE
+        return vl#LispList(["quote", s:ParseQuoted(a:tokens[1:])])
+    elseif index(a:tokens, s:DOT) > -1
+        throw "invalid syntax"
     elseif len(a:tokens) == 1
         return s:ParseAtom(a:tokens[0])
-    elseif a:tokens[0] == "("
+    elseif a:tokens[0] == s:L_PAREN
         return vl#LispList(s:ParseList(a:tokens))
-    elseif a:tokens[0] == '"'
+    elseif a:tokens[0] == s:D_QUOTE
         return vl#LispList(s:ParseString(a:tokens))
-    elseif a:tokens[0] == "'"
-        "if a:tokens[1] == "(" && index(a:tokens, ".") > 1
-            "return vl#LispList(["quote", s:ParsePair(a:tokens[1:])])
-        "endif
-        return vl#LispList(["quote", s:Parse(a:tokens[1:])])
+    endif
+endfunction
+
+function! s:ParseQuoted(tokens) abort
+    if a:tokens[0] == s:L_PAREN && index(a:tokens, s:DOT) > 0
+        return s:ParsePair(a:tokens)
+    else
+        return s:Parse(a:tokens)
     endif
 endfunction
 
 function! s:ParseList(tokens) abort
-    if a:tokens[0] != "(" || a:tokens[-1] != ")"
+    if a:tokens[0] != s:L_PAREN || a:tokens[-1] != s:R_PAREN
         throw "Invalid list structure -- s:ParseList"
     endif
     let tokens = a:tokens[1:-2]
@@ -53,18 +66,18 @@ function! s:ParseList(tokens) abort
     let i = 0  "skip open paren
     while i < len(tokens)
         let token = tokens[i]
-        if token == ")"
+        if token == s:R_PAREN
             throw "Unexpected list termination -- s:ParseList"
-        elseif token == "("
+        elseif token == s:L_PAREN
             let sublistlen = s:NestedNonTerminalLen(tokens[i:])
             call add(exprlist, s:Parse(tokens[i:i+sublistlen-1]))
             let i += sublistlen
-        elseif token == '"'
-            let stringlen = s:NonTerminalLen(tokens[i:], '"')
+        elseif token == s:D_QUOTE
+            let stringlen = s:NonTerminalLen(tokens[i:])
             call add(exprlist, s:Parse(tokens[i:i+stringlen-1]))
             let i += stringlen
-        elseif token == "'"
-            if tokens[i+1] == "("
+        elseif token == s:QUOTE
+            if tokens[i+1] == s:L_PAREN
                 let quotelen = s:NestedNonTerminalLen(tokens[i+1:])
                 call add(exprlist, s:Parse(tokens[i:i+quotelen]))
                 let i += 1 + quotelen
@@ -81,16 +94,17 @@ function! s:ParseList(tokens) abort
 endfunction
 
 function! s:ParsePair(tokens) abort
-    if a:tokens[0] != "(" || index(a:tokens, ".") == -1
+    let dotpos = index(a:tokens, s:DOT)
+    if a:tokens[0] != s:L_PAREN || dotpos == -1
         throw "Invalid pair structure -- s:ParseList"
     endif
-    let exprlist = s:ParseList(tokens)
-    if len(exprlist) != 3
-    endif
+    let lhs = s:ParseQuoted(a:tokens[1:dotpos-1])
+    let rhs = s:ParseQuoted(a:tokens[dotpos+1:-2])
+    return vl#Cons(lhs, rhs)
 endfunction
 
 function! s:ParseString(tokens) abort
-    if a:tokens[0] != '"' || a:tokens[-1] != '"'
+    if a:tokens[0] != s:D_QUOTE || a:tokens[-1] != s:D_QUOTE
         throw "Invalid string literal: "..string(join(a:tokens))
     endif
     return s:StrFactory(join(a:tokens[1:-2]))
@@ -100,7 +114,7 @@ function! s:StrFactory(str) abort
     return ["vlobj", #{_t: g:vl_t_lstr, _chars: str2list(a:str)}]
 endfunction
 
-function! s:NestedNonTerminalLen(tokens, open="(", close=")") abort
+function! s:NestedNonTerminalLen(tokens, open=s:L_PAREN, close=s:R_PAREN) abort
     let open_count = 0
     for i in range(len(a:tokens))
         let token = a:tokens[i]
@@ -116,7 +130,7 @@ function! s:NestedNonTerminalLen(tokens, open="(", close=")") abort
     return -1
 endfunction
 
-function! s:NonTerminalLen(tokens, delim) abort
+function! s:NonTerminalLen(tokens, delim=s:D_QUOTE) abort
     let delim_count = 0
     for i in range(len(a:tokens))
         let token = a:tokens[i]
@@ -139,7 +153,7 @@ function! s:ParseAtom(token) abort
         return a:token
     elseif a:token =~? s:BOOL_R
         return a:token
-    elseif a:token == "."
+    elseif a:token == s:DOT
         return a:token
     else
         throw "Invalid token: "..a:token
@@ -193,9 +207,9 @@ function! s:DeepLispList(elts) abort
 endfunction
 
 function! s:ExecProc(rator, rands, k) abort
-    if vl#Car(a:rator) =~? '^primitive$'
+    if vl#Car(a:rator) =~? '^prim$'
         return a:k(vl#Cdr(a:rator)(a:rands))
-    elseif vl#Car(a:rator) =~? '^cont-primitive$'
+    elseif vl#Car(a:rator) =~? '^cont-prim$'
         return vl#Cdr(a:rator)(vl#Car(a:rands))
     elseif vl#Car(a:rator) =~? '^proc$'
         let Body = s:ProcBody(a:rator)
@@ -207,7 +221,7 @@ function! s:ExecProc(rator, rands, k) abort
         let Body = s:ProcBody(a:rator)
         let env = s:ProcEnv(a:rator)
         let params = s:ProcParams(a:rator)
-        let args = vl#Cons(extend(["cont-primitive"], a:rands), [])
+        let args = vl#Cons(extend(["cont-prim"], a:rands), [])
         let result = Body(s:ExtendEnv(env, params, args), a:k)
         return result
     endif

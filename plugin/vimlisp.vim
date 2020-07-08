@@ -7,8 +7,16 @@ let g:vl_bool_f = "#f"
 let g:VL_INITIAL_ENV = vlenv#BuildInitialEnv()
 
 function! VlEvalCommand(expr) abort
-    let val = vl#Eval(a:expr)
-    echo vlutils#PrettyPrint(val)
+    try
+        let val = vl#Eval(a:expr)
+        echo vlutils#PrettyPrint(val)
+    catch
+        echohl WarningMsg
+        echomsg "[!] vl#Eval: "..v:exception
+        echohl SpellBad
+        echomsg a:expr
+        echohl Normal
+    endtry
 endfunction
 
 function! VlRunTests() abort

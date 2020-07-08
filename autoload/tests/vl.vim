@@ -25,13 +25,10 @@ function! tests#vl#TestVimLisp() abort
         endfor
     endfunction
 
-    call RunTests([
-                \["hello, world", vlutils#PrettyPrint(vl#Eval('"hello, world"'))],
-                \["(1 2 3)", vlutils#PrettyPrint(vl#Eval("'(1 2 3)"))],
-                \["13", vlutils#PrettyPrint(vl#Eval("13"))],
-                \])
-
     call RunEvalTests([
+                \[[1, [2, []]], "'(1 . (2 . ()))"],
+                \[[1, []], "'(1 . ())"],
+                \[[], "'()"],
                 \[3, 'x'],
                 \[-3, '-3'],
                 \[123, 123],
@@ -73,7 +70,12 @@ function! tests#vl#TestVimLisp() abort
                 \['#f', "(equal? '(1 2 3) '(1 2))"],
                 \['#t', "(begin (define l '(1 2)) (eq? l l))"],
                 \[[1, 2], "'(1 . 2)"],
-                \[[1, [2, []]], "'(1 . (2 . ()))"],
                 \[[1, [2, [3, []]]], "'(1 . (2 3))"],
+                \])
+
+    call RunTests([
+                \["hello, world", vlutils#PrettyPrint(vl#Eval('"hello, world"'))],
+                \["(1 2 3)", vlutils#PrettyPrint(vl#Eval("'(1 2 3)"))],
+                \["13", vlutils#PrettyPrint(vl#Eval("13"))],
                 \])
 endfunction
