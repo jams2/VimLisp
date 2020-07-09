@@ -1,4 +1,3 @@
-let g:VL_TRANSFORMERS = {}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
 let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\><=+-]\+$'
@@ -194,7 +193,7 @@ function! s:ParseAtom(token) abort
 endfunction
 
 function! vl#Analyze(expr) abort
-    let expr = s:ApplyTransformers(a:expr)
+    let expr = vltrns#Transform(a:expr)
     if type(expr) == v:t_number
         return {env, k -> k(expr)}
     elseif type(expr) == v:t_string
@@ -309,11 +308,11 @@ function! vl#Cadddr(list) abort
     return a:list[1][1][1][0]
 endfunction
 
-function! s:LispMap(proc, l) abort
+function! vl#LispMap(proc, l) abort
     if vlutils#IsEmptyList(a:l)
         return []
     endif
-    return vl#Cons(a:proc(vl#Car(a:l)), s:LispMap(a:proc, vl#Cdr(a:l)))
+    return vl#Cons(a:proc(vl#Car(a:l)), vl#LispMap(a:proc, vl#Cdr(a:l)))
 endfunction
 
 function! s:DeepLispMap(proc, l) abort
@@ -366,22 +365,13 @@ function! s:DefineVar(env, var, val) abort
     let a:env[a:var] = a:val
 endfunction
 
-function! s:ApplyTransformers(expr) abort
-    if type(vl#Car(a:expr)) == v:t_list
-        return a:expr
-    elseif has_key(g:VL_TRANSFORMERS, vl#Car(a:expr))
-        return get(g:VL_TRANSFORMERS, vl#Car(a:expr))(a:expr)
-    endif
-    return a:expr
-endfunction
-
 function! s:Sequentially(proc1, proc2) abort
     return {env, k -> a:proc1(env, {x -> a:proc2(env, k)})}
 endfunction
 
 function! s:GenSequence(expr) abort
     let Analyzer = {x -> vl#Analyze(x)}
-    let closures = s:LispMap(Analyzer, a:expr)
+    let closures = vl#LispMap(Analyzer, a:expr)
     let C1 = vl#Car(closures)
     while !vlutils#IsEmptyList(vl#Cdr(closures))
         let C2 = vl#Cadr(closures)
@@ -422,7 +412,7 @@ endfunction
 
 function! s:GenApplication(expr) abort
     let Rator = vl#Analyze(vl#Car(a:expr))
-    let rands = s:LispMap({x -> vl#Analyze(x)}, vl#Cdr(a:expr))
+    let rands = vl#LispMap({x -> vl#Analyze(x)}, vl#Cdr(a:expr))
     return {env, k -> Rator(env, s:RatorCont(rands, env, k))}
 endfunction
 
@@ -449,47 +439,6 @@ function! s:GenProc(expr) abort
     return {env, k -> k(vl#LispList(["proc", params, Body, env]))}
 endfunction
 
-function! s:LetToLambda(expr) abort
-    let bindings = vl#Cadr(a:expr)
-    let body = vl#Cddr(a:expr)
-    let vars = s:LispMap({x -> vl#Car(x)}, bindings)
-    let vals = s:LispMap({x -> vl#Cadr(x)}, bindings)
-    let lambda = vl#Cons("lambda", vl#Cons(vars, body))
-    return vl#Cons(lambda, vals)
-endfunction
-
-function! s:TransformCond(clauses) abort
-    if vlutils#IsEmptyList(a:clauses)
-        return []
-    endif
-    let first = vl#Car(a:clauses)
-    let rest = vl#Cdr(a:clauses)
-    if vl#Car(first) =~? '^else$'
-        if !vlutils#IsEmptyList(rest)
-            throw "Invalid cond expression: else clause must be last"
-        endif
-        if vlutils#IsEmptyList(vl#Cddr(first))
-            return vl#Cadr(first)
-        endif
-        return vl#Cons("begin", vl#Cdr(first))
-    endif
-    if vlutils#IsEmptyList(vl#Cddr(first))
-        let consequent = vl#Cadr(first)
-    else
-        let consequent = vl#Cons("begin", vl#Cdr(first))
-    endif
-    if vlutils#IsEmptyList(rest)
-        return vl#LispList(["if", vl#Car(first), consequent, g:vl_bool_f])
-    else
-        return vl#LispList(["if", vl#Car(first), consequent, s:TransformCond(rest)])
-    endif
-endfunction
-
-function! s:CondToIf(expr) abort
-    let clauses = vl#Cdr(a:expr)
-    return s:TransformCond(clauses)
-endfunction
-
 function! s:IsTrue(expr) abort
     return a:expr != g:vl_bool_f
 endfunction
@@ -508,21 +457,3 @@ function! s:GenSetBang(expr) abort
     let Cont = {env, k -> {val -> k(s:SetVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> Val_closure(env, Cont(env, k))}
 endfunction
-
-function! s:RegisterTransformer(name, funcref) abort
-    if has_key(g:VL_TRANSFORMERS, a:name)
-        throw "Duplicate syntax transformer: "..a:name
-    endif
-    let g:VL_TRANSFORMERS[a:name] = a:funcref
-endfunction
-
-function! s:RegisterTransformers(transformers) abort
-    for [name, Transformer] in a:transformers
-        call s:RegisterTransformer(name, Transformer)
-    endfor
-endfunction
-
-call s:RegisterTransformers([
-            \["let", funcref("s:LetToLambda")],
-            \["cond", funcref("s:CondToIf")],
-            \])
