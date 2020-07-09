@@ -1,3 +1,22 @@
-((lambda (x n) ((x x) n))
- (lambda (x)
-  (lambda (n)
+'(1 . 2)
+
+(define double
+  (lambda (x) (+ x x)))
+
+(cons 1 (double (double 7)))
+
+(define dd
+  (lambda (double x)
+    (double (double x))))
+
+(dd double 7)
+
+(define fx (lambda (f x) (f x)))
+
+(define double (lambda (x) (+ x x)))
+
+(fx double 6)
+
+7
+8
+"hello, world"

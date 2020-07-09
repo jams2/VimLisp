@@ -31,9 +31,28 @@ function! VlEvalFile(path) abort
     let lines = map(readfile(fname), {_, l -> trim(l)})
     let lines = filter(lines, {_, l -> match(l, '^;\+') == -1})
     let lines = filter(lines, {_, l -> strlen(l) > 0})
-    let lines = ["(begin"] + lines + [")"]
-    let result = vl#Eval(join(lines))
+    let source = join(lines)
+    let exprs = s:SplitExprs(source)
+    for expr in exprs
+        let result = vl#Eval(expr)
+    endfor
     echo vlutils#PrettyPrint(result)
+endfunction
+
+function! s:SplitExprs(source) abort
+    let remaining = a:source
+    let exprs = []
+    while len(remaining) > 0
+        if remaining[0] =~ '\s'
+            let remaining = remaining[1:]
+            continue
+        endif
+        let exprlen = vl#ExprLen(remaining)
+        let nextexpr = remaining[:exprlen-1]
+        call add(exprs, nextexpr)
+        let remaining = remaining[exprlen:]
+    endwhile
+    return exprs
 endfunction
 
 command! -nargs=* VlEval :call VlEvalCommand(<q-args>)

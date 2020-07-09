@@ -14,9 +14,13 @@ let s:QUOTE = "'"
 let s:DOT = "."
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
-    let tokens = split(substitute(a:expr, s:TOKEN_R, ' \1 ', 'g'))
-    let syntax = s:Parse(tokens)
-    return s:Analyze(syntax)(a:env, s:END_CONT)
+    let tokens = vl#Tokenize(a:expr)
+    let syntax = vl#Parse(tokens)
+    return vl#Analyze(syntax)(a:env, s:END_CONT)
+endfunction
+
+function! vl#Tokenize(expr) abort
+    return split(substitute(a:expr, s:TOKEN_R, ' \1 ', 'g'))
 endfunction
 
 function! vl#TypeOf(obj) abort
@@ -34,7 +38,7 @@ function! vl#TypeOf(obj) abort
     endif
 endfunction
 
-function! s:Parse(tokens) abort
+function! vl#Parse(tokens) abort
     if len(a:tokens) == 0
         throw "unterminated expression"
     elseif a:tokens[0] == s:QUOTE
@@ -50,11 +54,27 @@ function! s:Parse(tokens) abort
     endif
 endfunction
 
+function! vl#ExprLen(tokens) abort
+    let first = a:tokens[0]
+    if first == s:L_PAREN
+        return vl#NestedNonTerminalLen(a:tokens)
+    elseif first == s:D_QUOTE
+        return vl#NonTerminalLen(a:tokens)
+    elseif first == s:QUOTE
+        if a:tokens[1] == s:L_PAREN
+            return 1 + vl#NestedNonTerminalLen(a:tokens[1:])
+        endif
+        return 2
+    else
+        return 1
+    endif
+endfunction
+
 function! s:ParseQuoted(tokens) abort
     if a:tokens[0] == s:L_PAREN && index(a:tokens, s:DOT) > 0
         return s:ParsePair(a:tokens)
     else
-        return s:Parse(a:tokens)
+        return vl#Parse(a:tokens)
     endif
 endfunction
 
@@ -70,24 +90,24 @@ function! s:ParseList(tokens) abort
         if token == s:R_PAREN
             throw "Unexpected list termination -- s:ParseList"
         elseif token == s:L_PAREN
-            let sublistlen = s:NestedNonTerminalLen(tokens[i:])
-            call add(exprlist, s:Parse(tokens[i:i+sublistlen-1]))
+            let sublistlen = vl#NestedNonTerminalLen(tokens[i:])
+            call add(exprlist, vl#Parse(tokens[i:i+sublistlen-1]))
             let i += sublistlen
         elseif token == s:D_QUOTE
-            let stringlen = s:NonTerminalLen(tokens[i:])
-            call add(exprlist, s:Parse(tokens[i:i+stringlen-1]))
+            let stringlen = vl#NonTerminalLen(tokens[i:])
+            call add(exprlist, vl#Parse(tokens[i:i+stringlen-1]))
             let i += stringlen
         elseif token == s:QUOTE
             if tokens[i+1] == s:L_PAREN
-                let quotelen = s:NestedNonTerminalLen(tokens[i+1:])
-                call add(exprlist, s:Parse(tokens[i:i+quotelen]))
+                let quotelen = vl#NestedNonTerminalLen(tokens[i+1:])
+                call add(exprlist, vl#Parse(tokens[i:i+quotelen]))
                 let i += 1 + quotelen
             else
-                call add(exprlist, s:Parse(tokens[i:i+1]))
+                call add(exprlist, vl#Parse(tokens[i:i+1]))
                 let i += 2
             endif
         else
-            call add(exprlist, s:Parse(tokens[i:i]))
+            call add(exprlist, vl#Parse(tokens[i:i]))
             let i += 1
         endif
     endwhile
@@ -115,7 +135,7 @@ function! s:StrFactory(str) abort
     return ["vlobj", #{_t: g:vl_t_lstr, _chars: str2list(a:str)}]
 endfunction
 
-function! s:NestedNonTerminalLen(tokens, open=s:L_PAREN, close=s:R_PAREN) abort
+function! vl#NestedNonTerminalLen(tokens, open=s:L_PAREN, close=s:R_PAREN) abort
     let open_count = 0
     for i in range(len(a:tokens))
         let token = a:tokens[i]
@@ -131,7 +151,7 @@ function! s:NestedNonTerminalLen(tokens, open=s:L_PAREN, close=s:R_PAREN) abort
     return -1
 endfunction
 
-function! s:NonTerminalLen(tokens, delim=s:D_QUOTE) abort
+function! vl#NonTerminalLen(tokens, delim=s:D_QUOTE) abort
     let delim_count = 0
     for i in range(len(a:tokens))
         let token = a:tokens[i]
@@ -161,7 +181,7 @@ function! s:ParseAtom(token) abort
     endif
 endfunction
 
-function! s:Analyze(expr) abort
+function! vl#Analyze(expr) abort
     let expr = s:ApplyTransformers(a:expr)
     if type(expr) == v:t_number
         return {env, k -> k(expr)}
@@ -348,7 +368,7 @@ function! s:Sequentially(proc1, proc2) abort
 endfunction
 
 function! s:GenSequence(expr) abort
-    let Analyzer = {x -> s:Analyze(x)}
+    let Analyzer = {x -> vl#Analyze(x)}
     let closures = s:LispMap(Analyzer, a:expr)
     let C1 = vl#Car(closures)
     while !vlutils#IsEmptyList(vl#Cdr(closures))
@@ -389,13 +409,13 @@ function! s:RatorCont(rands, env, k) abort
 endfunction
 
 function! s:GenApplication(expr) abort
-    let Rator = s:Analyze(vl#Car(a:expr))
-    let rands = s:LispMap({x -> s:Analyze(x)}, vl#Cdr(a:expr))
+    let Rator = vl#Analyze(vl#Car(a:expr))
+    let rands = s:LispMap({x -> vl#Analyze(x)}, vl#Cdr(a:expr))
     return {env, k -> Rator(env, s:RatorCont(rands, env, k))}
 endfunction
 
 function! s:GenDefine(expr) abort
-    let ValClosure = s:Analyze(vl#Caddr(a:expr))
+    let ValClosure = vl#Analyze(vl#Caddr(a:expr))
     let InnerClosure = {env, k -> {val -> k(s:DefineVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> ValClosure(env, InnerClosure(env, k))}
 endfunction
@@ -463,16 +483,16 @@ function! s:IsTrue(expr) abort
 endfunction
 
 function! s:GenCond(expr) abort
-    let P_clsr = s:Analyze(vl#Cadr(a:expr))
-    let C_clsr = {env, k -> s:Analyze(vl#Caddr(a:expr))(env, k)}
+    let P_clsr = vl#Analyze(vl#Cadr(a:expr))
+    let C_clsr = {env, k -> vl#Analyze(vl#Caddr(a:expr))(env, k)}
     let alt = vlutils#IsEmptyList(vl#Cdddr(a:expr)) ? g:vl_bool_f : vl#Cadddr(a:expr)
-    let A_clsr = {env, k -> s:Analyze(alt)(env, k)}
+    let A_clsr = {env, k -> vl#Analyze(alt)(env, k)}
     let Cont = {env, k -> {res -> s:IsTrue(res) ? C_clsr(env, k) : A_clsr(env, k)}}
     return {env, k -> P_clsr(env, Cont(env, k))}
 endfunction
 
 function! s:GenSetBang(expr) abort
-    let Val_closure = s:Analyze(vl#Caddr(a:expr))
+    let Val_closure = vl#Analyze(vl#Caddr(a:expr))
     let Cont = {env, k -> {val -> k(s:SetVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> Val_closure(env, Cont(env, k))}
 endfunction
