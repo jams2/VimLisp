@@ -14,13 +14,25 @@ let s:QUOTE = "'"
 let s:DOT = "."
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
-    let tokens = vl#Tokenize(a:expr)
+    let tokens = split(substitute(a:expr, s:TOKEN_R, ' \1 ', 'g'))
     let syntax = vl#Parse(tokens)
     return vl#Analyze(syntax)(a:env, s:END_CONT)
 endfunction
 
-function! vl#Tokenize(expr) abort
-    return split(substitute(a:expr, s:TOKEN_R, ' \1 ', 'g'))
+function! vl#SplitExprs(source) abort
+    let remaining = a:source
+    let exprs = []
+    while len(remaining) > 0
+        if remaining[0] =~ '\s'
+            let remaining = remaining[1:]
+            continue
+        endif
+        let exprlen = vl#ExprLen(remaining)
+        let nextexpr = remaining[:exprlen-1]
+        call add(exprs, nextexpr)
+        let remaining = remaining[exprlen:]
+    endwhile
+    return exprs
 endfunction
 
 function! vl#TypeOf(obj) abort
