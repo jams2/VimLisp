@@ -105,3 +105,51 @@ function! tests#vl#TestVimLisp() abort
                 \["13", vlutils#PrettyPrint(vl#Eval("13"))],
                 \])
 endfunction
+
+function! s:FloatAvg(list) abort
+    let total = 0
+    for x in a:list
+        let total += x
+    endfor
+    return total / len(a:list)
+endfunction
+
+function! s:FloatMax(list) abort
+    let max = 0
+    for x in a:list
+        if x > max
+            let max = x
+        endif
+    endfor
+    return max
+endfunction
+
+function! s:FloatMin(list) abort
+    let min = a:list[0]
+    for x in a:list
+        if x < min
+            let min = x
+        endif
+    endfor
+    return min
+endfunction
+
+function! s:Benchmark(desc, func, n) abort
+    let times = []
+    for i in range(a:n)
+        call add(times, vlutils#TimeExecution(a:func))
+    endfor
+    echo "Executed "..a:desc.." "..a:n.." times:"
+    echo "\tMax: "..string(s:FloatMax(times))
+    echo "\tMin: "..string(s:FloatMin(times))
+    echo "\tAvg: "..string(s:FloatAvg(times))
+endfunction
+
+function! tests#vl#Benchmark() abort
+    let e = "(begin (define double (lambda (x) (+ x x)) (double (double (double 7)))))"
+    let Func = {-> vl#Eval(e)}
+    call s:Benchmark("nested double function call", Func, 100)
+    let e = '(let ((x 0) (y 0)) (while ((< (+ x y) 100)) (set! x (+ x 1)) (set! y (+ y 1))) y)'
+    let Func = {-> vl#Eval(e)}
+    call s:Benchmark("while loop 50 reps", Func, 100)
+endfunction

@@ -31,7 +31,6 @@ function! VlEvalFile(path) abort
         throw "file not readable: "..fname
     endif
     call VlEvalMultiline(readfile(fname))
-    echomsg "[+] VlEvalFile(\""..fname.."\"): ok"
 endfunction
 
 function! VlEvalMultiline(lines) abort
@@ -87,5 +86,7 @@ function! s:Rindex(list, pattern) abort
     endwhile
     return -1
 endfunction
+
+call VlEvalFile(expand("%:p:h").."/init.vl")
 
 command! -nargs=* VlEval :call VlEvalCommand(<q-args>)

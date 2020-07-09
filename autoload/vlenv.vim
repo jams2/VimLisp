@@ -15,5 +15,7 @@ function! vlenv#BuildInitialEnv() abort
                 \'eq?': ['prim', {args -> vlbuiltins#ApplyGeneric('eq?', args)}],
                 \'#t': g:vl_bool_t,
                 \'#f': g:vl_bool_f,
+                \'_current-handler': ['prim', {args -> vl#TopLevelHandler(args)}],
+                \'_old-handler': g:vl_bool_f,
                 \}
 endfunction

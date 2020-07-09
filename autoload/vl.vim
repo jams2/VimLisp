@@ -1,6 +1,6 @@
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
-let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\><=+-]\+$'
+let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\><=+_-]\+$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
 let s:BOOL_R = '^\(#t\)\|\(#f\)$'
@@ -493,4 +493,11 @@ function! s:GenSetBang(expr) abort
     let Val_closure = vl#Analyze(vl#Caddr(a:expr))
     let Cont = {env, k -> {val -> k(s:SetVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> Val_closure(env, Cont(env, k))}
+endfunction
+
+function! vl#TopLevelHandler(exception)
+    let e = a:exception[0]
+    echohl WarningMsg
+    echomsg "Uncaught exception: "..vlutils#PrettyPrint(e)
+    echohl Normal
 endfunction
