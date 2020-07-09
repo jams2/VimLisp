@@ -9,6 +9,7 @@ let s:TOKEN_R = '\([()"'']\)'
 let s:R_PAREN = ")"
 let s:L_PAREN = "("
 let s:D_QUOTE = '"'
+let s:BACKTICK = "`"
 let s:QUOTE = "'"
 let s:DOT = "."
 
@@ -61,9 +62,9 @@ function! s:ParseList(tokens) abort
     if a:tokens[0] != s:L_PAREN || a:tokens[-1] != s:R_PAREN
         throw "Invalid list structure -- s:ParseList"
     endif
-    let tokens = a:tokens[1:-2]
+    let tokens = a:tokens[1:-2]  " remove outer parens
     let exprlist = []
-    let i = 0  "skip open paren
+    let i = 0
     while i < len(tokens)
         let token = tokens[i]
         if token == s:R_PAREN
@@ -287,9 +288,13 @@ function! s:DeepLispMap(proc, l) abort
     if vlutils#IsEmptyList(a:l)
         return []
     elseif type(vl#Car(a:l)) ==  v:t_list
-        return vl#Cons(s:DeepLispMap(a:proc, vl#Car(a:l)), s:DeepLispMap(a:proc, vl#Cdr(a:l)))
+        let first = s:DeepLispMap(a:proc, vl#Car(a:l))
+        let rest = s:DeepLispMap(a:proc, vl#Cdr(a:l))
+        return vl#Cons(first, rest)
     else
-        return vl#Cons(a:proc(vl#Car(a:l)), s:DeepLispMap(a:proc, vl#Cdr(a:l)))
+        let first = a:proc(vl#Car(a:l))
+        let rest = s:DeepLispMap(a:proc, vl#Cdr(a:l))
+        return vl#Cons(first, rest)
     endif
 endfunction
 

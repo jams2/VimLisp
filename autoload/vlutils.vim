@@ -17,12 +17,10 @@ function! vlutils#PrintString(obj) abort
 endfunction
 
 function! vlutils#PrintPair(obj) abort
+    return "("..a:obj[0].." . "..a:obj[1]..")"
 endfunction
 
 function! vlutils#PrintList(obj) abort
-    if type(vl#Cdr(a:obj)) != v:t_list
-        return vlutils#PrintPair(a:obj)
-    endif
     let flat = vlutils#FlattenList(a:obj)
     let elts = map(flat, {_, x -> vlutils#PrettyPrint(x)})
     return "("..join(elts)..")"

@@ -1,3 +1,8 @@
+let s:add2 = {x, y -> x + y}
+let s:sub2 = {x, y -> x - y}
+let s:mult2 = {x, y -> x * y}
+let s:div2 = {x, y -> x / y}
+
 let s:PAIR_OPS = {
             \'to_str': funcref("vlutils#PrintPair"),
             \}
@@ -14,12 +19,17 @@ let s:LIST_OPS = {
             \}
 
 let s:NUMBER_OPS = {
+            \'add2': s:add2,
+            \'sub2': s:sub2,
+            \'mult2': s:mult2,
+            \'div2': s:div2,
             \'=': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'to_str': function("string"),
             \}
 
 let s:STRING_OPS = {
+            \'add2': s:add2,
             \'eq?': {x, y -> x is y ? g:vl_bool_t : g:vl_bool_f},
             \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'to_str': funcref("vlutils#PrintString")
@@ -48,16 +58,6 @@ function! vlbuiltins#ApplyGeneric(op, args) abort
         throw "Undefined operation on type "..type.." ("..a:op..")"
     endif
     return call(get(s:BUILTINS[type], a:op), args)
-endfunction
-
-function! vlbuiltins#VlAdd(args) abort
-    let total = 0
-    let l = a:args
-    while !vlutils#IsEmptyList(l)
-        let total += vl#Car(l)
-        let l = vl#Cdr(l)
-    endwhile
-    return total
 endfunction
 
 function! vlbuiltins#PrimitiveCons(l) abort

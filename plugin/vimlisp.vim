@@ -23,4 +23,17 @@ function! VlRunTests() abort
     call tests#vl#TestVimLisp()
 endfunction
 
+function! VlEvalFile(path) abort
+    let fname = fnameescape(a:path)
+    if !filereadable(fname)
+        throw "file not readable: "..fname
+    endif
+    let lines = map(readfile(fname), {_, l -> trim(l)})
+    let lines = filter(lines, {_, l -> match(l, '^;\+') == -1})
+    let lines = filter(lines, {_, l -> strlen(l) > 0})
+    let lines = ["(begin"] + lines + [")"]
+    let result = vl#Eval(join(lines))
+    echo vlutils#PrettyPrint(result)
+endfunction
+
 command! -nargs=* VlEval :call VlEvalCommand(<q-args>)

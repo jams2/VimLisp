@@ -1,6 +1,9 @@
 function! vlenv#BuildInitialEnv() abort
     return {
-                \'+': ['prim', {args -> vlbuiltins#VlAdd(args)}],
+                \'+': ['prim', {args -> vlbuiltins#ApplyGeneric('add2', args)}],
+                \'-': ['prim', {args -> vlbuiltins#ApplyGeneric('sub2', args)}],
+                \'*': ['prim', {args -> vlbuiltins#ApplyGeneric('mult2', args)}],
+                \'/': ['prim', {args -> vlbuiltins#ApplyGeneric('div2', args)}],
                 \'cons': ['prim', {args -> vlbuiltins#PrimitiveCons(args)}],
                 \'equal?': ['prim',
                 \{args -> vlbuiltins#ApplyGeneric('equal?', args)}],
