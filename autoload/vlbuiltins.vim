@@ -14,6 +14,7 @@ let s:PAIR_OPS = {
 let s:SYM_OPS = {
             \'eq?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
+            \'to_str': {x -> x},
             \}
 
 let s:LIST_OPS = {
@@ -70,4 +71,9 @@ endfunction
 
 function! vlbuiltins#PrimitiveCons(l) abort
     return [vl#Car(a:l), vl#Cadr(a:l)]
+endfunction
+
+function! vlbuiltins#VimCall(args) abort
+    let args = vlutils#FlattenList(a:args)
+    return call(args[0], args[1:])
 endfunction

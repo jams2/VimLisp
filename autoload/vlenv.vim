@@ -9,6 +9,7 @@ function! vlenv#BuildInitialEnv() abort
                 \'>=': ['prim', {args -> vlbuiltins#ApplyGeneric('gte', args)}],
                 \'<=': ['prim', {args -> vlbuiltins#ApplyGeneric('lte', args)}],
                 \'cons': ['prim', {args -> vlbuiltins#PrimitiveCons(args)}],
+                \'vimcall': ['prim', {args -> vlbuiltins#VimCall(args)}],
                 \'equal?': ['prim',
                 \{args -> vlbuiltins#ApplyGeneric('equal?', args)}],
                 \'eq?': ['prim', {args -> vlbuiltins#ApplyGeneric('eq?', args)}],

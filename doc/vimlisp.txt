@@ -1,0 +1,23 @@
+*vimlisp.txt*   For Vim version 8   Last change: July 2020
+
+
+OVERVIEW                                *vimlisp-overview* 
+
+A plugin for lovers of parentheses.
+
+=====
+
+COMMANDS                                *vimlisp-commands* 
+
+                                                *:VlEval*
+`:VlEval` {expr}      Evaluate a single vimlisp expression and echo the result.
+>
+                        :VlEval (+ 1 2)
+                        3
+<
+
+=====
+
+BUILTINS                                *vimlisp-builtins* 
+
+vim:tw=78:ts=8:ft=help:
