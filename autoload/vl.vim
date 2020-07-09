@@ -1,7 +1,7 @@
 let g:VL_TRANSFORMERS = {}
 let s:PREV_FRAME_KEY = "__prev_frame"
 let s:END_CONT = {val -> val}
-let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\+-]\+$'
+let s:SYMBOL_R = '^[a-zA-Z0-9?!*^/\\><=+-]\+$'
 let s:STRING_CONST_R = '^".*"$'
 let s:NUMBER_R = '^-\?\d\+$'
 let s:BOOL_R = '^\(#t\)\|\(#f\)$'

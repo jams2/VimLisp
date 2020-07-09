@@ -2,6 +2,10 @@ let s:add2 = {x, y -> x + y}
 let s:sub2 = {x, y -> x - y}
 let s:mult2 = {x, y -> x * y}
 let s:div2 = {x, y -> x / y}
+let s:gt = {x, y -> x > y ? g:vl_bool_t : g:vl_bool_f}
+let s:lt = {x, y -> x < y ? g:vl_bool_t : g:vl_bool_f}
+let s:gte = {x, y -> x >= y ? g:vl_bool_t : g:vl_bool_f}
+let s:lte = {x, y -> x <= y ? g:vl_bool_t : g:vl_bool_f}
 
 let s:PAIR_OPS = {
             \'to_str': funcref("vlutils#PrintPair"),
@@ -23,6 +27,10 @@ let s:NUMBER_OPS = {
             \'sub2': s:sub2,
             \'mult2': s:mult2,
             \'div2': s:div2,
+            \'gt': s:gt,
+            \'lt': s:lt,
+            \'lte': s:lte,
+            \'gte': s:gte,
             \'=': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'equal?': {x, y -> x == y ? g:vl_bool_t : g:vl_bool_f},
             \'to_str': function("string"),
