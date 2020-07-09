@@ -13,9 +13,13 @@ let s:QUOTE = "'"
 let s:DOT = "."
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
-    let tokens = split(substitute(a:expr, s:TOKEN_R, ' \1 ', 'g'))
+    let tokens = vl#Tokenize(a:expr)
     let syntax = vl#Parse(tokens)
     return vl#Analyze(syntax)(a:env, s:END_CONT)
+endfunction
+
+function! vl#Tokenize(expr) abort
+    return split(substitute(a:expr, s:TOKEN_R, ' \1 ', 'g'))
 endfunction
 
 function! vl#SplitExprs(source) abort
@@ -208,8 +212,12 @@ function! vl#Analyze(expr) abort
         return s:GenProc(expr)
     elseif expr[0] == "if"
         return s:GenCond(expr)
+    elseif expr[0] == "and"
+        return s:GenAnd(expr)
+    elseif expr[0] == "while"
+        return s:GenWhile(expr)
     elseif expr[0] == "begin"
-        return s:GenSequence(vl#Cdr(expr))
+        return s:GenSequence(vl#Cdr(expr), funcref("s:Sequentially"))
     elseif expr[0] == "define"
         return s:GenDefine(expr)
     elseif expr[0] == "set!"
@@ -221,6 +229,35 @@ function! vl#Analyze(expr) abort
     else
         throw "Invalid expression: "..expr
     endif
+endfunction
+
+function! s:AndSequentially(p1, p2) abort
+    let Cont = {env, k -> {x -> s:IsTrue(x) ? a:p2(env, k) : k(g:vl_bool_f)}}
+    return {env, k -> a:p1(env, Cont(env, k))}
+endfunction
+
+function! s:GenAnd(expr)
+    return s:GenSequence(vl#Cdr(a:expr), funcref("s:AndSequentially"))
+endfunction
+
+function! s:GenWhile(expr) abort
+    " 1. Analyze predicates (AND).
+    " 2. Analyze body.
+    " 3. Return closure that repeatedly executes body closure
+    "       while all predicates are true.
+    " The intermediate calculations get passed the end_cont
+    "   so as not to continue execution until the loop is
+    "   complete.
+    let Preds = vl#Analyze(vl#Cons("and", vl#Cadr(a:expr)))
+    let Body = vl#Analyze(vl#Cons("begin", vl#Cddr(a:expr)))
+    function! WhileClosure(env, k) abort closure
+        let result = g:vl_bool_f
+        while s:IsTrue(Preds(a:env, s:END_CONT))
+            let result = Body(a:env, s:END_CONT)
+        endwhile
+        return a:k(result)
+    endfunction
+    return funcref("WhileClosure")
 endfunction
 
 function! s:DeepLispList(elts) abort
@@ -369,13 +406,13 @@ function! s:Sequentially(proc1, proc2) abort
     return {env, k -> a:proc1(env, {x -> a:proc2(env, k)})}
 endfunction
 
-function! s:GenSequence(expr) abort
+function! s:GenSequence(expr, sequencer) abort
     let Analyzer = {x -> vl#Analyze(x)}
     let closures = vl#LispMap(Analyzer, a:expr)
     let C1 = vl#Car(closures)
     while !vlutils#IsEmptyList(vl#Cdr(closures))
         let C2 = vl#Cadr(closures)
-        let C1 = s:Sequentially(C1, C2)
+        let C1 = a:sequencer(C1, C2)
         let closures = vl#Cdr(closures)
     endwhile
     return C1
@@ -424,7 +461,7 @@ endfunction
 
 function! s:AnalyzeCallCCProc(expr) abort
     let params = vl#Cadr(a:expr)
-    let Body = s:GenSequence(vl#Cddr(a:expr))
+    let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
     return {env, k -> k(vl#LispList(["cont", params, Body, env]))}
 endfunction
 
@@ -435,7 +472,7 @@ endfunction
 
 function! s:GenProc(expr) abort
     let params = vl#Cadr(a:expr)
-    let Body = s:GenSequence(vl#Cddr(a:expr))
+    let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
     return {env, k -> k(vl#LispList(["proc", params, Body, env]))}
 endfunction
 

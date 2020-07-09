@@ -1,31 +1,32 @@
 
 # Table of Contents
 
-1.  [vimlisp](#orga89f40e)
-2.  [Why?](#org8d34bec)
-3.  [ToDo](#org5ed47cb)
+1.  [vimlisp](#org8cf211f)
+2.  [Why?](#orgeac9881)
+3.  [ToDo](#org2e773f7)
 
 
 
-<a id="orga89f40e"></a>
+<a id="org8cf211f"></a>
 
 # vimlisp
 
 A Scheme-like lisp interpreter embedded in Vim.
 
 
-<a id="org8d34bec"></a>
+<a id="orgeac9881"></a>
 
 # Why?
 
 
-<a id="org5ed47cb"></a>
+<a id="org2e773f7"></a>
 
 # ToDo
 
+-   [ ] error handling
 -   [ ] add quasiquote
 -   [ ] add error cases to tests
--   [ ] handle function/call arity mismatch gracefully
+-   [ ] handle function/call arity mismatch
 -   [ ] add equality operators
 -   [ ] add vim function interface
 -   [ ] add comparison operators
