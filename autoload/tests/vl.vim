@@ -5,24 +5,32 @@ function! tests#vl#TestVimLisp() abort
     endfunction
 
     function! RunTests(tests) abort
+        let [success, fail] = [0, 0]
         for [expected, actual] in a:tests
             if string(expected) == string(actual)
-                echo "[+] "..string(actual).."\t\t: "..string(expected)
+                let success += 1
             else
                 echo "[ ] "..string(actual).."\t\t: "..string(expected)
+                let fail += 1
             endif
         endfor
+        let total = success + fail
+        echo "[+] Ran "..total.." tests.\t("..success.."/"..total.." passed)"
     endfunction
 
     function! RunEvalTests(tests) abort
+        let [success, fail] = [0, 0]
         for [expected, expr] in a:tests
             let actual = TestVlEval(expr)
             if string(expected) == string(actual)
-                echo "[+] "..string(actual).."\t\t: "..expr
+                let success += 1
             else
-                echo "[ ] "..string(actual).."\t\t: "..expr
+                echo "[!] "..string(actual).."\t\t: "..expr
+                let fail += 1
             endif
         endfor
+        let total = success + fail
+        echo "[+] Ran "..total.." vl#Eval tests.\t("..success.."/"..total.." passed)"
     endfunction
 
     call RunEvalTests([
