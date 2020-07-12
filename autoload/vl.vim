@@ -18,6 +18,11 @@ let s:ENV_R = -1
 let s:K_STACK = []
 let s:KVAL_STACK = []
 let s:PROC_R = -1
+let s:PROG_STACK = []
+let s:ENV_STACK = []
+let s:PROG_K_STACK = []
+let s:RATOR = -1
+let s:ARGS = -1
 
 function! s:InitRegisters() abort
     let s:EXPR_R = -1
@@ -25,6 +30,11 @@ function! s:InitRegisters() abort
     let s:K_STACK = []
     let s:KVAL_STACK = []
     let s:PROC_R = -1
+    let s:PROG_STACK = []
+    let s:ENV_STACK = []
+    let s:PROG_K_STACK = []
+    let s:RATOR = -1
+    let s:ARGS = -1
 endfunction
 
 function! s:PushK(k) abort
@@ -47,6 +57,36 @@ function! s:PopKVal() abort
     return val
 endfunction
 
+function! s:PushProg(prog) abort
+    call add(s:PROG_STACK, a:prog)
+endfunction
+
+function! s:PopProg() abort
+    let Prog = s:PROG_STACK[-1]
+    let s:PROG_STACK = s:PROG_STACK[:-2]
+    return Prog
+endfunction
+
+function! s:PushEnv(env) abort
+    call add(s:ENV_STACK, a:env)
+endfunction
+
+function! s:PopEnv() abort
+    let env = s:ENV_STACK[-1]
+    let s:ENV_STACK = s:ENV_STACK[:-2]
+    return env
+endfunction
+
+function! s:PushProgK(k) abort
+    call add(s:PROG_K_STACK, a:k)
+endfunction
+
+function! s:PopProgK() abort
+    let K = s:PROG_K_STACK[-1]
+    let s:PROG_K_STACK = s:PROG_K_STACK[:-2]
+    return K
+endfunction
+
 function! s:EndCont(val) abort
     return a:val
 endfunction
@@ -65,6 +105,10 @@ endfunction
 
 function! s:ApplyK() abort
     return s:PopK()(s:PopKVal())
+endfunction
+
+function! s:EvalClosure() abort
+    call s:PopProg(s:PopEnv(), s:PopProgK())
 endfunction
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
@@ -371,28 +415,31 @@ function! s:DeepLispList(elts) abort
     endif
 endfunction
 
-function! s:ApplyProc(rator, rands, k) abort
-    if vl#Car(a:rator) =~? '^prim$'
+function! s:ApplyProc() abort
+    let rator = s:RATOR
+    let rands = s:ARGS
+    let K = s:PopProgK()
+    if vl#Car(rator) =~? '^prim$'
         let fname = "PrimitiveApply"..s:COUNTER
         function! {fname}() closure abort
-            call s:PushK(a:k)
-            call s:PushKVal(vl#Cdr(a:rator)(a:rands))
+            call s:PushK(K)
+            call s:PushKVal(vl#Cdr(rator)(rands))
             return s:ApplyK()
         endfunction
         return funcref(fname)
-    elseif vl#Car(a:rator) =~? '^cont-prim$'
-        return {-> vl#Cdr(a:rator)(vl#Car(a:rands))}
-    elseif vl#Car(a:rator) =~? '^proc$'
-        let Body = s:ProcBody(a:rator)
-        let env = s:ProcEnv(a:rator)
-        let params = s:ProcParams(a:rator)
-        return {-> Body(s:ExtendEnv(env, params, a:rands), a:k)}
-    elseif vl#Car(a:rator) =~? '^cont$'
-        let Body = s:ProcBody(a:rator)
-        let env = s:ProcEnv(a:rator)
-        let params = s:ProcParams(a:rator)
-        let args = vl#Cons(extend(["cont-prim"], a:rands), [])
-        return {-> Body(s:ExtendEnv(env, params, args), a:k)}
+    elseif vl#Car(rator) =~? '^cont-prim$'
+        return {-> vl#Cdr(rator)(vl#Car(rands))}
+    elseif vl#Car(rator) =~? '^proc$'
+        let Body = s:ProcBody(rator)
+        let env = s:ProcEnv(rator)
+        let params = s:ProcParams(rator)
+        return {-> Body(s:ExtendEnv(env, params, rands), K)}
+    elseif vl#Car(rator) =~? '^cont$'
+        let Body = s:ProcBody(rator)
+        let env = s:ProcEnv(rator)
+        let params = s:ProcParams(rator)
+        let args = vl#Cons(extend(["cont-prim"], rands), [])
+        return {-> Body(s:ExtendEnv(env, params, args), K)}
     endif
 endfunction
 
@@ -551,7 +598,14 @@ function! s:EvalClosureList(l, env, k) abort
 endfunction
 
 function! s:RandsCont(rator, k) abort
-    return {args -> s:ApplyProc(a:rator, args, a:k)}
+    let fname = "RandsCont"..s:COUNTER
+    function {fname}(args) closure abort
+        let s:RATOR = a:rator
+        let s:ARGS = a:args
+        call s:PushProgK(a:k)
+        return s:ApplyProc()
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:RatorCont(rands, env, k) abort
@@ -593,7 +647,18 @@ endfunction
 
 function! s:GenCallCC(expr) abort
     let Proc = s:AnalyzeCallCCProc(vl#Cadr(a:expr))
-    return {env, k -> Proc(env, {rator -> s:ApplyProc(rator, [k], {x -> x})})}
+    let fname = "CallCC"..s:COUNTER
+    let contname = "CallCCK"..s:COUNTER
+    function! {fname}(env, k) closure abort
+        function! {contname}(rator) closure abort
+            let s:RATOR = a:rator
+            let s:ARGS = [a:k]
+            call s:PushProgK({x -> x})
+            return s:ApplyProc()
+        endfunction
+        return Proc(a:env, funcref(contname))
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:GenProc(expr) abort
