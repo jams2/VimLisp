@@ -529,12 +529,23 @@ function! s:ProcBody(proc) abort
 endfunction
 
 function! s:EvalClosureList(l, env, k) abort
+    let s:COUNTER += 1
     if vlutils#IsEmptyList(a:l)
-        return s:ApplyCont(a:k, [])
+        call s:PushK(a:k)
+        call s:PushKVal([])
+        return s:ApplyK()
     endif
-    let InnerCont = {arg -> {args -> s:ApplyCont(a:k, vl#Cons(arg, args))}}
-    let OuterCont = {arg -> s:EvalClosureList(vl#Cdr(a:l), a:env, InnerCont(arg))}
-    return vl#Car(a:l)(a:env, OuterCont)
+    let outercontname = "EvalClosureListOuterCont"..s:COUNTER
+    let innercontname = "EvalClosureListInnerCont"..s:COUNTER
+    function! {outercontname}(arg) closure abort
+        function! {innercontname}(args) closure abort
+            call s:PushK(a:k)
+            call s:PushKVal(vl#Cons(a:arg, a:args))
+            return s:ApplyK()
+        endfunction
+        return s:EvalClosureList(vl#Cdr(a:l), a:env, funcref(innercontname))
+    endfunction
+    return vl#Car(a:l)(a:env, funcref(outercontname))
 endfunction
 
 function! s:RandsCont(rator, k) abort
@@ -569,7 +580,13 @@ endfunction
 function! s:AnalyzeCallCCProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
-    return {env, k -> s:ApplyCont(k, vl#LispList(["cont", params, Body, env]))}
+    let fname = "CallCCK"..s:COUNTER
+    function! {fname}(env, k) closure abort
+        call s:PushK(a:k)
+        call s:PushKVal(vl#LispList(["cont", params, Body, a:env]))
+        return s:ApplyK()
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:GenCallCC(expr) abort
@@ -603,9 +620,18 @@ function! s:GenCond(expr) abort
 endfunction
 
 function! s:GenSetBang(expr) abort
-    let Val_closure = vl#Analyze(vl#Caddr(a:expr))
-    let Cont = {env, k -> {val -> s:ApplyCont(k, s:SetVar(env, vl#Cadr(a:expr), val))}}
-    return {env, k -> Val_closure(env, Cont(env, k))}
+    let ValClosure = vl#Analyze(vl#Caddr(a:expr))
+    let contname = "SetBangCont"..s:COUNTER
+    let fname = "SetBangClosure"..s:COUNTER
+    function! {fname}(env, k) closure abort
+        function! {contname}(val) closure abort
+            call s:PushK(a:k)
+            call s:PushKVal(s:SetVar(a:env, vl#Cadr(a:expr), a:val))
+            return s:ApplyK()
+        endfunction
+        return ValClosure(a:env, funcref(contname))
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! vl#TopLevelHandler(exception)
