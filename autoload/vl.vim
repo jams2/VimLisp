@@ -108,8 +108,8 @@ function! s:ApplyK() abort
     return s:PopK()(s:PopKVal())
 endfunction
 
-function! s:EvalClosure(env, k) abort
-    return s:CLOSURE_R(a:env, a:k)
+function! s:EvalClosure(k) abort
+    return s:CLOSURE_R(s:ENV_R, a:k)
 endfunction
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
@@ -118,7 +118,8 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let syntax = vl#Parse(tokens)
     let s:EXPR_R = syntax
     let s:CLOSURE_R = vl#Analyze()
-    let Bounce = s:EvalClosure(a:env, funcref("s:EndCont"))
+    let s:ENV_R = a:env
+    let Bounce = s:EvalClosure(funcref("s:EndCont"))
     return s:Trampoline(Bounce)
 endfunction
 
@@ -376,7 +377,8 @@ function! s:AndSequentially(p1, p2) abort
 
     function! {fname}(env, k) closure abort
         let s:CLOSURE_R = a:p1
-        return s:EvalClosure(a:env, function(contfactname)(a:env, a:k))
+        let s:ENV_R = a:env
+        return s:EvalClosure(function(contfactname)(a:env, a:k))
     endfunction
 
     return funcref(fname)
@@ -401,9 +403,10 @@ function! s:GenWhile(expr) abort
     function! WhileClosure(env, k) abort closure
         let result = g:vl_bool_f
         let s:CLOSURE_R = Preds
-        while s:IsTrue(s:Trampoline(s:EvalClosure(a:env, s:END_CONT)))
+        let s:ENV_R = a:env
+        while s:IsTrue(s:Trampoline(s:EvalClosure(s:END_CONT)))
             let s:CLOSURE_R = Body
-            let result = s:Trampoline(s:EvalClosure(a:env, s:END_CONT))
+            let result = s:Trampoline(s:EvalClosure(s:END_CONT))
             let s:CLOSURE_R = Preds
         endwhile
         call s:PushK(a:k)
@@ -449,7 +452,8 @@ function! s:ApplyProc() abort
         let fname = "ProcBounce"..s:COUNTER
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            return s:EvalClosure(s:ExtendEnv(env, params, rands), K)
+            let s:ENV_R = s:ExtendEnv(env, params, rands)
+            return s:EvalClosure(K)
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^cont$'
@@ -460,7 +464,8 @@ function! s:ApplyProc() abort
         let fname = "ContBounce"..s:COUNTER
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            return s:EvalClosure(s:ExtendEnv(env, params, rands), K)
+            let s:ENV_R = s:ExtendEnv(env, params, rands)
+            return s:EvalClosure(K)
         endfunction
         return funcref(fname)
     endif
@@ -578,10 +583,12 @@ function! s:Sequentially(proc1, proc2) abort
     function! {fname}(env, k) closure abort
         function! {innerclosurename}(x) closure abort
             let s:CLOSURE_R = a:proc2
-            return s:EvalClosure(a:env, a:k)
+            let s:ENV_R = a:env
+            return s:EvalClosure(a:k)
         endfunction
         let s:CLOSURE_R = a:proc1
-        return s:EvalClosure(a:env, funcref(innerclosurename))
+        let s:ENV_R = a:env
+        return s:EvalClosure(funcref(innerclosurename))
     endfunction
     return funcref(fname)
 endfunction
@@ -632,7 +639,8 @@ function! s:EvalClosureList(l, env, k) abort
         return s:EvalClosureList(vl#Cdr(a:l), a:env, funcref(innercontname))
     endfunction
     let s:CLOSURE_R = vl#Car(a:l)
-    return s:EvalClosure(a:env, funcref(outercontname))
+    let s:ENV_R = a:env
+    return s:EvalClosure(funcref(outercontname))
 endfunction
 
 function! s:RandsCont(rator, k) abort
@@ -657,7 +665,8 @@ function! s:GenApplication(expr) abort
     let fname = "ApplicationClosure"..s:COUNTER
     function! {fname}(env, k) closure abort
         let s:CLOSURE_R = Rator
-        return s:EvalClosure(a:env, s:RatorCont(rands, a:env, a:k))
+        let s:ENV_R = a:env
+        return s:EvalClosure(s:RatorCont(rands, a:env, a:k))
     endfunction
     return funcref(fname)
 endfunction
@@ -674,7 +683,8 @@ function! s:GenDefine(expr) abort
             return s:ApplyK()
         endfunction
         let s:CLOSURE_R = ValClosure
-        return s:EvalClosure(a:env, funcref(contname))
+        let s:ENV_R = a:env
+        return s:EvalClosure(funcref(contname))
     endfunction
     return funcref(fname)
 endfunction
@@ -730,7 +740,8 @@ function! s:GenCond(expr) abort
     function! {consequentname}(env, k) closure abort
         let s:EXPR_R = vl#Caddr(a:expr)
         let s:CLOSURE_R = vl#Analyze()
-        return s:EvalClosure(a:env, a:k)
+        let s:ENV_R = a:env
+        return s:EvalClosure(a:k)
     endfunction
     let C_clsr = funcref(consequentname)
 
@@ -739,7 +750,8 @@ function! s:GenCond(expr) abort
     function! {altname}(env, k) closure abort
         let s:EXPR_R = alt
         let s:CLOSURE_R = vl#Analyze()
-        return s:EvalClosure(a:env, a:k)
+        let s:ENV_R = a:env
+        return s:EvalClosure(a:k)
     endfunction
     let A_clsr = funcref(altname)
 
@@ -749,14 +761,17 @@ function! s:GenCond(expr) abort
         function! {contname}(res) closure abort
             if s:IsTrue(a:res)
                 let s:CLOSURE_R = C_clsr
-                return s:EvalClosure(a:env, a:k)
+                let s:ENV_R = a:env
+                return s:EvalClosure(a:k)
             else
                 let s:CLOSURE_R = A_clsr
-                return s:EvalClosure(a:env, a:k)
+                let s:ENV_R = a:env
+                return s:EvalClosure(a:k)
             endif
         endfunction
         let s:CLOSURE_R = P_clsr
-        return s:EvalClosure(a:env, funcref(contname))
+        let s:ENV_R = a:env
+        return s:EvalClosure(funcref(contname))
     endfunction
     return funcref(fname)
 endfunction
@@ -773,7 +788,8 @@ function! s:GenSetBang(expr) abort
             return s:ApplyK()
         endfunction
         let s:CLOSURE_R = ValClosure
-        return s:EvalClosure(a:env, funcref(contname))
+        let s:ENV_R = a:env
+        return s:EvalClosure(funcref(contname))
     endfunction
     return funcref(fname)
 endfunction

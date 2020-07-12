@@ -150,8 +150,8 @@ endfunction
 function! tests#vl#Benchmark() abort
     let e = "(begin (define double (lambda (x) (+ x x)) (double (double (double 7)))))"
     let Func = {-> vl#Eval(e)}
-    call s:Benchmark("nested double function call", Func, 100)
+    call s:Benchmark("nested double function call", Func, 200)
     let e = '(let ((x 0) (y 0)) (while ((< (+ x y) 100)) (set! x (+ x 1)) (set! y (+ y 1))) y)'
     let Func = {-> vl#Eval(e)}
-    call s:Benchmark("while loop 50 reps", Func, 100)
+    call s:Benchmark("while loop 50 reps", Func, 200)
 endfunction
