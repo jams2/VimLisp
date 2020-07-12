@@ -63,10 +63,6 @@ function! s:Trampoline(bounce) abort
     endif
 endfunction
 
-function! s:ApplyCont(cont, val) abort
-    return a:cont(a:val)
-endfunction
-
 function! s:ApplyK() abort
     return s:PopK()(s:PopKVal())
 endfunction
@@ -377,7 +373,13 @@ endfunction
 
 function! s:ApplyProc(rator, rands, k) abort
     if vl#Car(a:rator) =~? '^prim$'
-        return {-> s:ApplyCont(a:k, vl#Cdr(a:rator)(a:rands))}
+        let fname = "PrimitiveApply"..s:COUNTER
+        function! {fname}() closure abort
+            call s:PushK(a:k)
+            call s:PushKVal(vl#Cdr(a:rator)(a:rands))
+            return s:ApplyK()
+        endfunction
+        return funcref(fname)
     elseif vl#Car(a:rator) =~? '^cont-prim$'
         return {-> vl#Cdr(a:rator)(vl#Car(a:rands))}
     elseif vl#Car(a:rator) =~? '^proc$'
