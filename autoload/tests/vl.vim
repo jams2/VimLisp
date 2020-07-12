@@ -23,7 +23,7 @@ function! tests#vl#TestVimLisp() abort
         for [expected, expr] in a:tests
             let actual = TestVlEval(expr)
             if string(expected) == string(actual)
-                echo "[+] "..string(expr)
+                "echo "[+] "..string(expr)
                 let success += 1
             else
                 echo "[!] "..string(actual).."\t\t: "..expr

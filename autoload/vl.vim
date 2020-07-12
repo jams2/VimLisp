@@ -268,9 +268,9 @@ function! vl#Analyze(expr) abort
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
     elseif expr[0] == "vlobj"
-        return {env, k -> s:ApplyCont(k, vl#Cadr(expr))}
+        return s:GenConst(vl#Cadr(expr))
     elseif expr[0] == "quote"
-        return {env, k -> s:ApplyCont(k, vl#Cadr(expr))}
+        return s:GenConst(vl#Cadr(expr))
     elseif expr[0] == "lambda"
         return s:GenProc(expr)
     elseif expr[0] == "if"
@@ -315,9 +315,23 @@ function! s:GenLookup(expr) abort
 endfunction
 
 function! s:AndSequentially(p1, p2) abort
-    let Cont = {env, k -> {x -> s:IsTrue(x) ? a:p2(env, k) :
-                \s:ApplyCont(k, g:vl_bool_f)}}
-    return {env, k -> a:p1(env, Cont(env, k))}
+    let fname = "AndClosureCont"..s:COUNTER
+    let contfactname = "AndContFactory"..s:COUNTER
+
+    function! {contfactname}(env, k) closure abort
+        function! {fname}(val) closure abort
+            if s:IsTrue(a:val)
+                return a:p2(a:env, a:k)
+            else
+                call s:PushK(a:k)
+                call s:PushKVal(g:vl_bool_f)
+                return s:ApplyK()
+            endif
+        endfunction
+        return funcref(fname)
+    endfunction
+
+    return {env, k -> a:p1(env, function(contfactname)(env, k))}
 endfunction
 
 function! s:GenAnd(expr)
@@ -339,7 +353,9 @@ function! s:GenWhile(expr) abort
         while s:IsTrue(s:Trampoline(Preds(a:env, s:END_CONT)))
             let result = s:Trampoline(Body(a:env, s:END_CONT))
         endwhile
-        return s:ApplyCont(a:k, result)
+        call s:PushK(a:k)
+        call s:PushKVal(result)
+        return s:ApplyK()
     endfunction
     return funcref("WhileClosure")
 endfunction
@@ -537,8 +553,17 @@ endfunction
 
 function! s:GenDefine(expr) abort
     let ValClosure = vl#Analyze(vl#Caddr(a:expr))
-    let InnerClosure = {env, k -> {val -> s:ApplyCont(k, s:DefineVar(env, vl#Cadr(a:expr), val))}}
-    return {env, k -> ValClosure(env, InnerClosure(env, k))}
+    let contname = "DefineCont"..s:COUNTER
+    let fname = "DefineClosure"..s:COUNTER
+    function! {fname}(env, k) closure abort
+        function! {contname}(val) closure abort
+            call s:PushK(a:k)
+            call s:PushKVal(s:DefineVar(a:env, vl#Cadr(a:expr), a:val))
+            return s:ApplyK()
+        endfunction
+        return ValClosure(a:env, funcref(contname))
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:AnalyzeCallCCProc(expr) abort
@@ -555,7 +580,13 @@ endfunction
 function! s:GenProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
-    return {env, k -> s:ApplyCont(k, vl#LispList(["proc", params, Body, env]))}
+    let fname = "ProcClosure"..s:COUNTER
+    function! {fname}(env, k) closure abort
+        call s:PushK(a:k)
+        call s:PushKVal(vl#LispList(["proc", params, Body, a:env]))
+        return s:ApplyK()
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:IsTrue(expr) abort
