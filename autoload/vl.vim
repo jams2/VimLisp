@@ -12,10 +12,32 @@ let s:BACKTICK = "`"
 let s:QUOTE = "'"
 let s:DOT = "."
 
+function! s:EndCont(val) abort
+    return a:val
+endfunction
+
+function! s:Trampoline(bounce) abort
+    if type(a:bounce) == v:t_func
+        let Val = a:bounce()
+        while type(Val) == v:t_func
+            let Val = Val()
+        endwhile
+        return Val
+    else
+        return a:bounce
+    endif
+endfunction
+
+function! s:ApplyCont(cont, val) abort
+    return a:cont(a:val)
+endfunction
+
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let tokens = vl#Tokenize(a:expr)
     let syntax = vl#Parse(tokens)
-    return vl#Analyze(syntax)(a:env, s:END_CONT)
+    let Program = vl#Analyze(syntax)
+    let Bounce = Program(a:env, funcref("s:EndCont"))
+    return s:Trampoline(Bounce)
 endfunction
 
 function! vl#Tokenize(expr) abort
@@ -199,15 +221,15 @@ endfunction
 function! vl#Analyze(expr) abort
     let expr = vltrns#Transform(a:expr)
     if type(expr) == v:t_number
-        return {env, k -> k(expr)}
+        return {env, k -> s:ApplyCont(k, expr)}
     elseif type(expr) == v:t_string
-        return {env, k -> k(s:ApplyEnv(env, expr))}
+        return {env, k -> s:ApplyCont(k, s:ApplyEnv(env, expr))}
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
     elseif expr[0] == "vlobj"
-        return {env, k -> k(vl#Cadr(expr))}
+        return {env, k -> s:ApplyCont(k, vl#Cadr(expr))}
     elseif expr[0] == "quote"
-        return {env, k -> k(vl#Cadr(expr))}
+        return {env, k -> s:ApplyCont(k, vl#Cadr(expr))}
     elseif expr[0] == "lambda"
         return s:GenProc(expr)
     elseif expr[0] == "if"
@@ -232,7 +254,8 @@ function! vl#Analyze(expr) abort
 endfunction
 
 function! s:AndSequentially(p1, p2) abort
-    let Cont = {env, k -> {x -> s:IsTrue(x) ? a:p2(env, k) : k(g:vl_bool_f)}}
+    let Cont = {env, k -> {x -> s:IsTrue(x) ? a:p2(env, k) :
+                \s:ApplyCont(k, g:vl_bool_f)}}
     return {env, k -> a:p1(env, Cont(env, k))}
 endfunction
 
@@ -252,10 +275,10 @@ function! s:GenWhile(expr) abort
     let Body = vl#Analyze(vl#Cons("begin", vl#Cddr(a:expr)))
     function! WhileClosure(env, k) abort closure
         let result = g:vl_bool_f
-        while s:IsTrue(Preds(a:env, s:END_CONT))
-            let result = Body(a:env, s:END_CONT)
+        while s:IsTrue(s:Trampoline(Preds(a:env, s:END_CONT)))
+            let result = s:Trampoline(Body(a:env, s:END_CONT))
         endwhile
-        return a:k(result)
+        return s:ApplyCont(a:k, result)
     endfunction
     return funcref("WhileClosure")
 endfunction
@@ -275,24 +298,22 @@ function! s:DeepLispList(elts) abort
     endif
 endfunction
 
-function! s:ExecProc(rator, rands, k) abort
+function! s:ApplyProc(rator, rands, k) abort
     if vl#Car(a:rator) =~? '^prim$'
-        return a:k(vl#Cdr(a:rator)(a:rands))
+        return {-> s:ApplyCont(a:k, vl#Cdr(a:rator)(a:rands))}
     elseif vl#Car(a:rator) =~? '^cont-prim$'
-        return vl#Cdr(a:rator)(vl#Car(a:rands))
+        return {-> vl#Cdr(a:rator)(vl#Car(a:rands))}
     elseif vl#Car(a:rator) =~? '^proc$'
         let Body = s:ProcBody(a:rator)
         let env = s:ProcEnv(a:rator)
         let params = s:ProcParams(a:rator)
-        let result = Body(s:ExtendEnv(env, params, a:rands), a:k)
-        return result
+        return {-> Body(s:ExtendEnv(env, params, a:rands), a:k)}
     elseif vl#Car(a:rator) =~? '^cont$'
         let Body = s:ProcBody(a:rator)
         let env = s:ProcEnv(a:rator)
         let params = s:ProcParams(a:rator)
         let args = vl#Cons(extend(["cont-prim"], a:rands), [])
-        let result = Body(s:ExtendEnv(env, params, args), a:k)
-        return result
+        return {-> Body(s:ExtendEnv(env, params, args), a:k)}
     endif
 endfunction
 
@@ -432,15 +453,15 @@ endfunction
 
 function! s:EvalClosureList(l, env, k) abort
     if vlutils#IsEmptyList(a:l)
-        return a:k([])
+        return s:ApplyCont(a:k, [])
     endif
-    let InnerCont = {arg -> {args -> a:k(vl#Cons(arg, args))}}
+    let InnerCont = {arg -> {args -> s:ApplyCont(a:k, vl#Cons(arg, args))}}
     let OuterCont = {arg -> s:EvalClosureList(vl#Cdr(a:l), a:env, InnerCont(arg))}
     return vl#Car(a:l)(a:env, OuterCont)
 endfunction
 
 function! s:RandsCont(rator, k) abort
-    return {args -> s:ExecProc(a:rator, args, a:k)}
+    return {args -> s:ApplyProc(a:rator, args, a:k)}
 endfunction
 
 function! s:RatorCont(rands, env, k) abort
@@ -455,25 +476,25 @@ endfunction
 
 function! s:GenDefine(expr) abort
     let ValClosure = vl#Analyze(vl#Caddr(a:expr))
-    let InnerClosure = {env, k -> {val -> k(s:DefineVar(env, vl#Cadr(a:expr), val))}}
+    let InnerClosure = {env, k -> {val -> s:ApplyCont(k, s:DefineVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> ValClosure(env, InnerClosure(env, k))}
 endfunction
 
 function! s:AnalyzeCallCCProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
-    return {env, k -> k(vl#LispList(["cont", params, Body, env]))}
+    return {env, k -> s:ApplyCont(k, vl#LispList(["cont", params, Body, env]))}
 endfunction
 
 function! s:GenCallCC(expr) abort
     let Proc = s:AnalyzeCallCCProc(vl#Cadr(a:expr))
-    return {env, k -> Proc(env, {rator -> s:ExecProc(rator, [k], {x -> x})})}
+    return {env, k -> Proc(env, {rator -> s:ApplyProc(rator, [k], {x -> x})})}
 endfunction
 
 function! s:GenProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
-    return {env, k -> k(vl#LispList(["proc", params, Body, env]))}
+    return {env, k -> s:ApplyCont(k, vl#LispList(["proc", params, Body, env]))}
 endfunction
 
 function! s:IsTrue(expr) abort
@@ -491,7 +512,7 @@ endfunction
 
 function! s:GenSetBang(expr) abort
     let Val_closure = vl#Analyze(vl#Caddr(a:expr))
-    let Cont = {env, k -> {val -> k(s:SetVar(env, vl#Cadr(a:expr), val))}}
+    let Cont = {env, k -> {val -> s:ApplyCont(k, s:SetVar(env, vl#Cadr(a:expr), val))}}
     return {env, k -> Val_closure(env, Cont(env, k))}
 endfunction
 
