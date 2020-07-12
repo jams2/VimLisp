@@ -115,7 +115,8 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     call s:InitRegisters()
     let tokens = vl#Tokenize(a:expr)
     let syntax = vl#Parse(tokens)
-    let Program = vl#Analyze(syntax)
+    let s:EXPR_R = syntax
+    let Program = vl#Analyze()
     let Bounce = s:EvalClosure(Program, a:env, funcref("s:EndCont"))
     return s:Trampoline(Bounce)
 endfunction
@@ -298,8 +299,8 @@ function! s:ParseAtom(token) abort
     endif
 endfunction
 
-function! vl#Analyze(expr) abort
-    let expr = vltrns#Transform(a:expr)
+function! vl#Analyze() abort
+    let expr = vltrns#Transform(s:EXPR_R)
     let s:COUNTER += 1
     if type(expr) == v:t_number
         return s:GenConst(expr)
@@ -386,8 +387,10 @@ function! s:GenWhile(expr) abort
     " The intermediate calculations get passed the end_cont
     "   so as not to continue execution until the loop is
     "   complete.
-    let Preds = vl#Analyze(vl#Cons("and", vl#Cadr(a:expr)))
-    let Body = vl#Analyze(vl#Cons("begin", vl#Cddr(a:expr)))
+    let s:EXPR_R = vl#Cons("and", vl#Cadr(a:expr))
+    let Preds = vl#Analyze()
+    let s:EXPR_R = vl#Cons("begin", vl#Cddr(a:expr))
+    let Body = vl#Analyze()
     function! WhileClosure(env, k) abort closure
         let result = g:vl_bool_f
         while s:IsTrue(s:Trampoline(s:EvalClosure(Preds, a:env, s:END_CONT)))
@@ -553,9 +556,13 @@ function! s:Sequentially(proc1, proc2) abort
     return {env, k -> s:EvalClosure(a:proc1, env, {x -> a:proc2(env, k)})}
 endfunction
 
+function! s:MapAnalyze(expr) abort
+    let s:EXPR_R = a:expr
+    return vl#Analyze()
+endfunction
+
 function! s:GenSequence(expr, sequencer) abort
-    let Analyzer = {x -> vl#Analyze(x)}
-    let closures = vl#LispMap(Analyzer, a:expr)
+    let closures = vl#LispMap(funcref("s:MapAnalyze"), a:expr)
     let C1 = vl#Car(closures)
     while !vlutils#IsEmptyList(vl#Cdr(closures))
         let C2 = vl#Cadr(closures)
@@ -613,13 +620,15 @@ function! s:RatorCont(rands, env, k) abort
 endfunction
 
 function! s:GenApplication(expr) abort
-    let Rator = vl#Analyze(vl#Car(a:expr))
-    let rands = vl#LispMap({x -> vl#Analyze(x)}, vl#Cdr(a:expr))
+    let s:EXPR_R = vl#Car(a:expr)
+    let Rator = vl#Analyze()
+    let rands = vl#LispMap(funcref("s:MapAnalyze"), vl#Cdr(a:expr))
     return {env, k -> s:EvalClosure(Rator, env, s:RatorCont(rands, env, k))}
 endfunction
 
 function! s:GenDefine(expr) abort
-    let ValClosure = vl#Analyze(vl#Caddr(a:expr))
+    let s:EXPR_R = vl#Caddr(a:expr)
+    let ValClosure = vl#Analyze()
     let contname = "DefineCont"..s:COUNTER
     let fname = "DefineClosure"..s:COUNTER
     function! {fname}(env, k) closure abort
@@ -678,16 +687,28 @@ function! s:IsTrue(expr) abort
 endfunction
 
 function! s:GenCond(expr) abort
-    let P_clsr = vl#Analyze(vl#Cadr(a:expr))
-    let C_clsr = {env, k -> s:EvalClosure(vl#Analyze(vl#Caddr(a:expr)), env, k)}
+    let s:EXPR_R = vl#Cadr(a:expr)
+    let P_clsr = vl#Analyze()
+    let consequentname = "CondConsequent"..s:COUNTER
+    function {consequentname}(env, k) closure abort
+        let s:EXPR_R = vl#Caddr(a:expr)
+        return s:EvalClosure(vl#Analyze(), a:env, a:k)
+    endfunction
+    let C_clsr = funcref(consequentname)
     let alt = vlutils#IsEmptyList(vl#Cdddr(a:expr)) ? g:vl_bool_f : vl#Cadddr(a:expr)
-    let A_clsr = {env, k -> vl#Analyze(alt)(env, k)}
+    let altname = "CondAlt"..s:COUNTER
+    function! {altname}(env, k) closure abort
+        let s:EXPR_R = alt
+        return s:EvalClosure(vl#Analyze(), a:env, a:k)
+    endfunction
+    let A_clsr = funcref(altname)
     let Cont = {env, k -> {res -> s:IsTrue(res) ? s:EvalClosure(C_clsr, env, k) : s:EvalClosure(A_clsr, env, k)}}
     return {env, k -> s:EvalClosure(P_clsr, env, Cont(env, k))}
 endfunction
 
 function! s:GenSetBang(expr) abort
-    let ValClosure = vl#Analyze(vl#Caddr(a:expr))
+    let s:EXPR_R = vl#Caddr(a:expr)
+    let ValClosure = vl#Analyze()
     let contname = "SetBangCont"..s:COUNTER
     let fname = "SetBangClosure"..s:COUNTER
     function! {fname}(env, k) closure abort
