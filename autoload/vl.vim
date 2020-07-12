@@ -11,6 +11,41 @@ let s:D_QUOTE = '"'
 let s:BACKTICK = "`"
 let s:QUOTE = "'"
 let s:DOT = "."
+let s:COUNTER = 0
+
+let s:EXPR_R = -1
+let s:ENV_R = -1
+let s:K_STACK = []
+let s:KVAL_STACK = []
+let s:PROC_R = -1
+
+function! s:InitRegisters() abort
+    let s:EXPR_R = -1
+    let s:ENV_R = -1
+    let s:K_STACK = []
+    let s:KVAL_STACK = []
+    let s:PROC_R = -1
+endfunction
+
+function! s:PushK(k) abort
+    call add(s:K_STACK, a:k)
+endfunction
+
+function! s:PopK() abort
+    let Kn = s:K_STACK[-1]
+    let s:K_STACK = s:K_STACK[:-2]
+    return Kn
+endfunction
+
+function! s:PushKVal(val) abort
+    call add(s:KVAL_STACK, a:val)
+endfunction
+
+function! s:PopKVal() abort
+    let val = s:KVAL_STACK[-1]
+    let s:KVAL_STACK = s:KVAL_STACK[:-2]
+    return val
+endfunction
 
 function! s:EndCont(val) abort
     return a:val
@@ -32,7 +67,12 @@ function! s:ApplyCont(cont, val) abort
     return a:cont(a:val)
 endfunction
 
+function! s:ApplyK() abort
+    return s:PopK()(s:PopKVal())
+endfunction
+
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
+    call s:InitRegisters()
     let tokens = vl#Tokenize(a:expr)
     let syntax = vl#Parse(tokens)
     let Program = vl#Analyze(syntax)
@@ -220,10 +260,11 @@ endfunction
 
 function! vl#Analyze(expr) abort
     let expr = vltrns#Transform(a:expr)
+    let s:COUNTER += 1
     if type(expr) == v:t_number
-        return {env, k -> s:ApplyCont(k, expr)}
+        return s:GenConst(expr)
     elseif type(expr) == v:t_string
-        return {env, k -> s:ApplyCont(k, s:ApplyEnv(env, expr))}
+        return s:GenLookup(expr)
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
     elseif expr[0] == "vlobj"
@@ -251,6 +292,26 @@ function! vl#Analyze(expr) abort
     else
         throw "Invalid expression: "..expr
     endif
+endfunction
+
+function! s:GenConst(expr) abort
+    let fname = "Closure"..s:COUNTER
+    function! {fname}(env, k) closure abort
+        call s:PushK(a:k)
+        call s:PushKVal(a:expr)
+        return s:ApplyK()
+    endfunction
+    return funcref(fname)
+endfunction
+
+function! s:GenLookup(expr) abort
+    let fname = "Closure"..s:COUNTER
+    function! {fname}(env, k) closure abort
+        call s:PushK(a:k)
+        call s:PushKVal(s:ApplyEnv(a:env, a:expr))
+        return s:ApplyK()
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:AndSequentially(p1, p2) abort
