@@ -14,12 +14,12 @@ let s:DOT = "."
 let s:COUNTER = 0
 
 let s:EXPR_R = -1
+let s:CLOSURE_R = -1
 let s:ENV_R = -1
+let s:NEXT_CONT = -1
+let s:SAVED_CONT = -1
 let s:K_STACK = []
 let s:KVAL_STACK = []
-let s:PROC_R = -1
-let s:PROG_STACK = []
-let s:ENV_STACK = []
 let s:APPLY_K = -1
 let s:RATOR = -1
 let s:ARGS = -1
@@ -27,12 +27,12 @@ let s:ARGS = -1
 function! s:InitRegisters() abort
     let s:EXPR_R = -1
     let s:CLOSURE_R = -1
+    let s:CLOSURE_LIST_R = -1
     let s:ENV_R = -1
+    let s:NEXT_CONT = -1
+    let s:SAVED_CONT = -1
     let s:K_STACK = []
     let s:KVAL_STACK = []
-    let s:PROC_R = -1
-    let s:PROG_STACK = []
-    let s:ENV_STACK = []
     let s:APPLY_K = -1
     let s:RATOR = -1
     let s:ARGS = -1
@@ -58,36 +58,6 @@ function! s:PopKVal() abort
     return val
 endfunction
 
-function! s:PushProg(prog) abort
-    call add(s:PROG_STACK, a:prog)
-endfunction
-
-function! s:PopProg() abort
-    let Prog = s:PROG_STACK[-1]
-    let s:PROG_STACK = s:PROG_STACK[:-2]
-    return Prog
-endfunction
-
-function! s:PushEnv(env) abort
-    call add(s:ENV_STACK, a:env)
-endfunction
-
-function! s:PopEnv() abort
-    let env = s:ENV_STACK[-1]
-    let s:ENV_STACK = s:ENV_STACK[:-2]
-    return env
-endfunction
-
-function! s:PushProgK(k) abort
-    call add(s:PROG_K_STACK, a:k)
-endfunction
-
-function! s:PopProgK() abort
-    let K = s:PROG_K_STACK[-1]
-    let s:PROG_K_STACK = s:PROG_K_STACK[:-2]
-    return K
-endfunction
-
 function! s:EndCont(val) abort
     return a:val
 endfunction
@@ -108,8 +78,8 @@ function! s:ApplyK() abort
     return s:PopK()(s:PopKVal())
 endfunction
 
-function! s:EvalClosure(k) abort
-    return s:CLOSURE_R(s:ENV_R, a:k)
+function! s:EvalClosure() abort
+    return s:CLOSURE_R()
 endfunction
 
 function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
@@ -119,7 +89,8 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let s:EXPR_R = syntax
     let s:CLOSURE_R = vl#Analyze()
     let s:ENV_R = a:env
-    let Bounce = s:EvalClosure(funcref("s:EndCont"))
+    let s:NEXT_CONT = funcref("s:EndCont")
+    let Bounce = s:EvalClosure()
     return s:Trampoline(Bounce)
 endfunction
 
@@ -339,8 +310,8 @@ endfunction
 
 function! s:GenConst(expr) abort
     let fname = "Closure"..s:COUNTER
-    function! {fname}(env, k) closure abort
-        call s:PushK(a:k)
+    function! {fname}() closure abort
+        call s:PushK(s:NEXT_CONT)
         call s:PushKVal(a:expr)
         return s:ApplyK()
     endfunction
@@ -349,38 +320,57 @@ endfunction
 
 function! s:GenLookup(expr) abort
     let fname = "Closure"..s:COUNTER
-    function! {fname}(env, k) closure abort
-        call s:PushK(a:k)
-        call s:PushKVal(s:ApplyEnv(a:env, a:expr))
+    function! {fname}() closure abort
+        call s:PushK(s:NEXT_CONT)
+        call s:PushKVal(s:ApplyEnv(s:ENV_R, a:expr))
         return s:ApplyK()
     endfunction
     return funcref(fname)
 endfunction
 
-function! s:AndSequentially(p1, p2) abort
-    let contname = "AndClosureCont"..s:COUNTER
-    let contfactname = "AndContFactory"..s:COUNTER
-    let fname = "AndClosure"..s:COUNTER
+function! s:Sequentially(closures) abort
+    let fname = "SequenceClosure"..s:COUNTER
+    let closures = a:closures
+    function! {fname}() closure abort
+        let s:SAVED_CONT = s:NEXT_CONT
+        let s:NEXT_CONT = {x -> x}
+        while vl#Cdr(closures) != []
+            let s:CLOSURE_R = closures[0]
+            call s:EvalClosure()
+            let closures = closures[1]
+        endwhile
+        let s:NEXT_CONT = s:SAVED_CONT
+        let s:CLOSURE_R = closures[0]
+        return s:EvalClosure()
+    endfunction
+    return funcref(fname)
+endfunction
 
-    function! {contfactname}(env, k) closure abort
-        function! {contname}(val) closure abort
-            if s:IsTrue(a:val)
-                return a:p2(a:env, a:k)
-            else
-                call s:PushK(a:k)
+function! s:AndSequentially(closures) abort
+    let fname = "AndClosure"..s:COUNTER
+    let closures = a:closures
+    function! {fname}() closure abort
+        if closures == []
+            call s:PushK(s:NEXT_CONT)
+            call s:PushKVal(g:vl_bool_t)
+            return s:ApplyK()
+        endif
+        let s:SAVED_CONT = s:NEXT_CONT
+        let s:NEXT_CONT = {x -> x}
+        while vl#Cdr(closures) != []
+            let s:CLOSURE_R = closures[0]
+            if !s:IsTrue(s:EvalClosure())
+                let s:NEXT_CONT = s:SAVED_CONT
+                call s:PushK(s:NEXT_CONT)
                 call s:PushKVal(g:vl_bool_f)
                 return s:ApplyK()
             endif
-        endfunction
-        return funcref(contname)
+            let closures = closures[1]
+        endwhile
+        let s:NEXT_CONT = s:SAVED_CONT
+        let s:CLOSURE_R = closures[0]
+        return s:EvalClosure()
     endfunction
-
-    function! {fname}(env, k) closure abort
-        let s:CLOSURE_R = a:p1
-        let s:ENV_R = a:env
-        return s:EvalClosure(function(contfactname)(a:env, a:k))
-    endfunction
-
     return funcref(fname)
 endfunction
 
@@ -400,20 +390,24 @@ function! s:GenWhile(expr) abort
     let Preds = vl#Analyze()
     let s:EXPR_R = vl#Cons("begin", vl#Cddr(a:expr))
     let Body = vl#Analyze()
-    function! WhileClosure(env, k) abort closure
+    let fname = "WhileClosure"..s:COUNTER
+    function! {fname}() closure abort
         let result = g:vl_bool_f
         let s:CLOSURE_R = Preds
-        let s:ENV_R = a:env
-        while s:IsTrue(s:Trampoline(s:EvalClosure(s:END_CONT)))
+        let s:SAVED_CONT = s:NEXT_CONT
+        let s:NEXT_CONT = s:END_CONT
+        while s:IsTrue(s:Trampoline(s:EvalClosure()))
             let s:CLOSURE_R = Body
-            let result = s:Trampoline(s:EvalClosure(s:END_CONT))
+            let result = s:Trampoline(s:EvalClosure())
             let s:CLOSURE_R = Preds
+            let s:NEXT_CONT = s:END_CONT
         endwhile
-        call s:PushK(a:k)
+        let s:NEXT_CONT = s:SAVED_CONT
+        call s:PushK(s:NEXT_CONT)
         call s:PushKVal(result)
         return s:ApplyK()
     endfunction
-    return funcref("WhileClosure")
+    return funcref(fname)
 endfunction
 
 function! s:DeepLispList(elts) abort
@@ -453,7 +447,8 @@ function! s:ApplyProc() abort
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
             let s:ENV_R = s:ExtendEnv(env, params, rands)
-            return s:EvalClosure(K)
+            let s:NEXT_CONT = K
+            return s:EvalClosure()
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^cont$'
@@ -465,7 +460,8 @@ function! s:ApplyProc() abort
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
             let s:ENV_R = s:ExtendEnv(env, params, rands)
-            return s:EvalClosure(K)
+            let s:NEXT_CONT = K
+            return s:EvalClosure()
         endfunction
         return funcref(fname)
     endif
@@ -577,22 +573,6 @@ function! s:DefineVar(env, var, val) abort
     let a:env[a:var] = a:val
 endfunction
 
-function! s:Sequentially(proc1, proc2) abort
-    let fname = "SequenceClosure"..s:COUNTER
-    let innerclosurename = "SequenceNext"..s:COUNTER
-    function! {fname}(env, k) closure abort
-        function! {innerclosurename}(x) closure abort
-            let s:CLOSURE_R = a:proc2
-            let s:ENV_R = a:env
-            return s:EvalClosure(a:k)
-        endfunction
-        let s:CLOSURE_R = a:proc1
-        let s:ENV_R = a:env
-        return s:EvalClosure(funcref(innerclosurename))
-    endfunction
-    return funcref(fname)
-endfunction
-
 function! s:MapAnalyze(expr) abort
     let s:EXPR_R = a:expr
     return vl#Analyze()
@@ -600,13 +580,7 @@ endfunction
 
 function! s:GenSequence(expr, sequencer) abort
     let closures = vl#LispMap(funcref("s:MapAnalyze"), a:expr)
-    let C1 = vl#Car(closures)
-    while !vlutils#IsEmptyList(vl#Cdr(closures))
-        let C2 = vl#Cadr(closures)
-        let C1 = a:sequencer(C1, C2)
-        let closures = vl#Cdr(closures)
-    endwhile
-    return C1
+    return a:sequencer(closures)
 endfunction
 
 function! s:ProcParams(proc) abort
@@ -621,9 +595,10 @@ function! s:ProcBody(proc) abort
     return vl#Caddr(a:proc)
 endfunction
 
-function! s:EvalClosureList(l, env, k) abort
+function! s:EvalClosureList(k) abort
     let s:COUNTER += 1
-    if vlutils#IsEmptyList(a:l)
+    let closures = s:CLOSURE_LIST_R
+    if vlutils#IsEmptyList(closures)
         call s:PushK(a:k)
         call s:PushKVal([])
         return s:ApplyK()
@@ -636,11 +611,12 @@ function! s:EvalClosureList(l, env, k) abort
             call s:PushKVal(vl#Cons(a:arg, a:args))
             return s:ApplyK()
         endfunction
-        return s:EvalClosureList(vl#Cdr(a:l), a:env, funcref(innercontname))
+        let s:CLOSURE_LIST_R = vl#Cdr(closures)
+        return s:EvalClosureList(funcref(innercontname))
     endfunction
-    let s:CLOSURE_R = vl#Car(a:l)
-    let s:ENV_R = a:env
-    return s:EvalClosure(funcref(outercontname))
+    let s:CLOSURE_R = vl#Car(closures)
+    let s:NEXT_CONT = funcref(outercontname)
+    return s:EvalClosure()
 endfunction
 
 function! s:RandsCont(rator, k) abort
@@ -654,8 +630,14 @@ function! s:RandsCont(rator, k) abort
     return funcref(fname)
 endfunction
 
-function! s:RatorCont(rands, env, k) abort
-    return {rator -> s:EvalClosureList(a:rands, a:env, s:RandsCont(rator, a:k))}
+function! s:RatorCont(rands) abort
+    let fname = "RatorCont"..s:COUNTER
+    function! {fname}(rator) closure abort
+        let s:NEXT_CONT = s:SAVED_CONT
+        let s:CLOSURE_LIST_R = a:rands
+        return s:EvalClosureList(s:RandsCont(a:rator, s:NEXT_CONT))
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:GenApplication(expr) abort
@@ -663,10 +645,11 @@ function! s:GenApplication(expr) abort
     let Rator = vl#Analyze()
     let rands = vl#LispMap(funcref("s:MapAnalyze"), vl#Cdr(a:expr))
     let fname = "ApplicationClosure"..s:COUNTER
-    function! {fname}(env, k) closure abort
+    function! {fname}() closure abort
         let s:CLOSURE_R = Rator
-        let s:ENV_R = a:env
-        return s:EvalClosure(s:RatorCont(rands, a:env, a:k))
+        let s:SAVED_CONT = s:NEXT_CONT
+        let s:NEXT_CONT = s:RatorCont(rands)
+        return s:EvalClosure()
     endfunction
     return funcref(fname)
 endfunction
@@ -676,15 +659,17 @@ function! s:GenDefine(expr) abort
     let ValClosure = vl#Analyze()
     let contname = "DefineCont"..s:COUNTER
     let fname = "DefineClosure"..s:COUNTER
-    function! {fname}(env, k) closure abort
+    function! {fname}() closure abort
+        let s:SAVED_CONT = s:NEXT_CONT
         function! {contname}(val) closure abort
-            call s:PushK(a:k)
-            call s:PushKVal(s:DefineVar(a:env, vl#Cadr(a:expr), a:val))
+            let s:NEXT_CONT = s:SAVED_CONT
+            call s:PushK(s:NEXT_CONT)
+            call s:PushKVal(s:DefineVar(s:ENV_R, vl#Cadr(a:expr), a:val))
             return s:ApplyK()
         endfunction
         let s:CLOSURE_R = ValClosure
-        let s:ENV_R = a:env
-        return s:EvalClosure(funcref(contname))
+        let s:NEXT_CONT = funcref(contname)
+        return s:EvalClosure()
     endfunction
     return funcref(fname)
 endfunction
@@ -693,9 +678,9 @@ function! s:AnalyzeCallCCProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
     let fname = "CallCCK"..s:COUNTER
-    function! {fname}(env, k) closure abort
-        call s:PushK(a:k)
-        call s:PushKVal(vl#LispList(["cont", params, Body, a:env]))
+    function! {fname}() closure abort
+        call s:PushK(s:NEXT_CONT)
+        call s:PushKVal(vl#LispList(["cont", params, Body, s:ENV_R]))
         return s:ApplyK()
     endfunction
     return funcref(fname)
@@ -705,14 +690,18 @@ function! s:GenCallCC(expr) abort
     let Proc = s:AnalyzeCallCCProc(vl#Cadr(a:expr))
     let fname = "CallCC"..s:COUNTER
     let contname = "CallCCK"..s:COUNTER
-    function! {fname}(env, k) closure abort
+    function! {fname}() closure abort
+        let s:SAVED_CONT = s:NEXT_CONT
         function! {contname}(rator) closure abort
+            let s:NEXT_CONT = s:SAVED_CONT
             let s:RATOR = a:rator
-            let s:ARGS = [a:k]
+            let s:ARGS = [s:NEXT_CONT]
             let s:APPLY_K = {x -> x}
             return s:ApplyProc()
         endfunction
-        return Proc(a:env, funcref(contname))
+        let s:CLOSURE_R = Proc
+        let s:NEXT_CONT = funcref(contname)
+        return s:EvalClosure()
     endfunction
     return funcref(fname)
 endfunction
@@ -721,9 +710,9 @@ function! s:GenProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
     let fname = "ProcClosure"..s:COUNTER
-    function! {fname}(env, k) closure abort
-        call s:PushK(a:k)
-        call s:PushKVal(vl#LispList(["proc", params, Body, a:env]))
+    function! {fname}() closure abort
+        call s:PushK(s:NEXT_CONT)
+        call s:PushKVal(vl#LispList(["proc", params, Body, s:ENV_R]))
         return s:ApplyK()
     endfunction
     return funcref(fname)
@@ -737,41 +726,39 @@ function! s:GenCond(expr) abort
     let s:EXPR_R = vl#Cadr(a:expr)
     let P_clsr = vl#Analyze()
     let consequentname = "CondConsequent"..s:COUNTER
-    function! {consequentname}(env, k) closure abort
+    function! {consequentname}() closure abort
         let s:EXPR_R = vl#Caddr(a:expr)
         let s:CLOSURE_R = vl#Analyze()
-        let s:ENV_R = a:env
-        return s:EvalClosure(a:k)
+        return s:EvalClosure()
     endfunction
     let C_clsr = funcref(consequentname)
 
     let alt = vlutils#IsEmptyList(vl#Cdddr(a:expr)) ? g:vl_bool_f : vl#Cadddr(a:expr)
     let altname = "CondAlt"..s:COUNTER
-    function! {altname}(env, k) closure abort
+    function! {altname}() closure abort
         let s:EXPR_R = alt
         let s:CLOSURE_R = vl#Analyze()
-        let s:ENV_R = a:env
-        return s:EvalClosure(a:k)
+        return s:EvalClosure()
     endfunction
     let A_clsr = funcref(altname)
 
     let fname = "CondClosure"..s:COUNTER
     let contname = "CondCont"..s:COUNTER
-    function! {fname}(env, k) closure abort
+    function! {fname}() closure abort
+        let s:SAVED_CONT = s:NEXT_CONT
         function! {contname}(res) closure abort
+            let s:NEXT_CONT = s:SAVED_CONT
             if s:IsTrue(a:res)
                 let s:CLOSURE_R = C_clsr
-                let s:ENV_R = a:env
-                return s:EvalClosure(a:k)
+                return s:EvalClosure()
             else
                 let s:CLOSURE_R = A_clsr
-                let s:ENV_R = a:env
-                return s:EvalClosure(a:k)
+                return s:EvalClosure()
             endif
         endfunction
         let s:CLOSURE_R = P_clsr
-        let s:ENV_R = a:env
-        return s:EvalClosure(funcref(contname))
+        let s:NEXT_CONT = funcref(contname)
+        return s:EvalClosure()
     endfunction
     return funcref(fname)
 endfunction
@@ -781,15 +768,16 @@ function! s:GenSetBang(expr) abort
     let ValClosure = vl#Analyze()
     let contname = "SetBangCont"..s:COUNTER
     let fname = "SetBangClosure"..s:COUNTER
-    function! {fname}(env, k) closure abort
+    function! {fname}() closure abort
+        let s:SAVED_CONT = s:NEXT_CONT
         function! {contname}(val) closure abort
-            call s:PushK(a:k)
-            call s:PushKVal(s:SetVar(a:env, vl#Cadr(a:expr), a:val))
+            call s:PushK(s:SAVED_CONT)
+            call s:PushKVal(s:SetVar(s:ENV_R, vl#Cadr(a:expr), a:val))
             return s:ApplyK()
         endfunction
         let s:CLOSURE_R = ValClosure
-        let s:ENV_R = a:env
-        return s:EvalClosure(funcref(contname))
+        let s:NEXT_CONT = funcref(contname)
+        return s:EvalClosure()
     endfunction
     return funcref(fname)
 endfunction
