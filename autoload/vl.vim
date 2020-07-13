@@ -1,3 +1,4 @@
+let s:PREV_FRAME_KEY = "__prev_frame"
 let s:COUNTER = 0
 
 function! s:InitRegisters() abort
@@ -7,9 +8,10 @@ function! s:InitRegisters() abort
     let s:ENV_R = -1
     let s:K_STACK = []
     let s:KVAL_STACK = []
-    let s:APPLY_K = -1
-    let s:RATOR = -1
-    let s:ARGS = -1
+    let s:HANDLER_STACK = []
+    let s:ERR_R = -1
+    let s:PROC_RATOR_R = -1
+    let s:PROC_ARGS_R = -1
 endfunction
 
 function! s:PushK(k) abort
@@ -32,6 +34,16 @@ function! s:PopKVal() abort
     return val
 endfunction
 
+function! s:PushHandler(val) abort
+    call add(s:HANDLER_STACK, a:val)
+endfunction
+
+function! s:PopHandler() abort
+    let Handler = s:HANDLER_STACK[-1]
+    let s:HANDLER_STACK = s:HANDLER_STACK[:-2]
+    return Handler
+endfunction
+
 function! s:EndCont(val) abort
     return a:val
 endfunction
@@ -52,6 +64,12 @@ function! s:ApplyK() abort
     return s:PopK()(s:PopKVal())
 endfunction
 
+function! s:ApplyHandler() abort
+    call s:PushK(s:PopHandler())
+    call s:PushKVal(s:ERR_R)
+    return s:ApplyK()
+endfunction
+
 function! s:EvalClosure() abort
     return s:CLOSURE_R()
 endfunction
@@ -60,6 +78,7 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let syntax = vlparse#Parse(tokens)
+    call s:PushHandler(funcref("vl#TopLevelHandler"))
     let s:EXPR_R = syntax
     let s:CLOSURE_R = vl#Analyze()
     let s:ENV_R = a:env
@@ -82,22 +101,6 @@ function! vl#TypeOf(obj) abort
     endif
 endfunction
 
-function! vl#ExprLen(tokens) abort
-    let first = a:tokens[0]
-    if first == s:L_PAREN
-        return s:NestedNonTerminalLen(a:tokens)
-    elseif first == s:D_QUOTE
-        return s:NonTerminalLen(a:tokens)
-    elseif first == s:QUOTE
-        if a:tokens[1] == s:L_PAREN
-            return 1 + s:NestedNonTerminalLen(a:tokens[1:])
-        endif
-        return 2
-    else
-        return 1
-    endif
-endfunction
-
 function! vl#Analyze() abort
     call s:PushK(funcref("s:EndCont"))
     let expr = vltrns#Transform(s:EXPR_R)
@@ -108,6 +111,8 @@ function! vl#Analyze() abort
         return s:GenLookup(expr)
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
+    elseif expr[0] == "raise"
+        return s:GenRaise(expr)
     elseif expr[0] == "vlobj"
         return s:GenConst(vl#Cadr(expr))
     elseif expr[0] == "quote"
@@ -133,6 +138,15 @@ function! vl#Analyze() abort
     else
         throw "Invalid expression: "..expr
     endif
+endfunction
+
+function! s:GenRaise(condition) abort
+    let fname = "Condition"..s:COUNTER
+    function! {fname}() closure abort
+        let s:ERR_R = a:condition
+        return s:ApplyHandler()
+    endfunction
+    return funcref(fname)
 endfunction
 
 function! s:GenConst(expr) abort
@@ -229,8 +243,8 @@ function! s:GenWhile(expr) abort
 endfunction
 
 function! s:ApplyProc() abort
-    let rator = s:RATOR
-    let rands = s:ARGS
+    let rator = s:PROC_RATOR_R
+    let rands = s:PROC_ARGS_R
     if vl#Car(rator) =~? '^prim$'
         let fname = "PrimitiveApply"..s:COUNTER
         function! {fname}() closure abort
@@ -416,8 +430,8 @@ endfunction
 function! s:RandsCont(rator) abort
     let fname = "RandsCont"..s:COUNTER
     function! {fname}(args) closure abort
-        let s:RATOR = a:rator
-        let s:ARGS = a:args
+        let s:PROC_RATOR_R = a:rator
+        let s:PROC_ARGS_R = a:args
         return s:ApplyProc()
     endfunction
     return funcref(fname)
@@ -482,8 +496,8 @@ function! s:GenCallCC(expr) abort
     let contname = "CallCCK"..s:COUNTER
     function! {fname}() closure abort
         function! {contname}(rator) closure abort
-            let s:RATOR = a:rator
-            let s:ARGS = []
+            let s:PROC_RATOR_R = a:rator
+            let s:PROC_ARGS_R = []
             return s:ApplyProc()
         endfunction
         let s:CLOSURE_R = Proc
@@ -565,8 +579,5 @@ function! s:GenSetBang(expr) abort
 endfunction
 
 function! vl#TopLevelHandler(exception)
-    let e = a:exception[0]
-    echohl WarningMsg
-    echomsg "Uncaught exception: "..vlutils#PrettyPrint(e)
-    echohl Normal
+    return ["condition", vl#Cdr(a:exception)]
 endfunction
