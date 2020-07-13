@@ -41,17 +41,17 @@ function! tests#vl#TestVimLisp() abort
                 \[-3, '-3'],
                 \[123, 123],
                 \[3, 'x'],
-                \[3, '(+ 1 (+ 1 1))'],
                 \[3, '(- 5 2)'],
+                \[3, '(+ 1 (+ 1 1))'],
                 \[10, '(* 5 2)'],
                 \[3, '(/ 12 4)'],
+                \[3, '(+ 1 2)'],
                 \[0, "(define x 3)"],
+                \[12, '((lambda (x y) (+ x y)) 5 7)'],
                 \[0, '(define x "hello, world")'],
                 \[0, '(set! x 3)'],
                 \[4, '(begin 1 2 4)'],
                 \[3, '(begin (define x 3) x)'],
-                \[3, '(+ 1 2)'],
-                \[12, '((lambda (x y) (+ x y)) 5 7)'],
                 \[7, '(call/cc (lambda (k) 7))'],
                 \[7, '(call/cc (lambda (k) (k 7)))'],
                 \[9, '((lambda () 5 7 9))'],
@@ -74,6 +74,9 @@ function! tests#vl#TestVimLisp() abort
                 \["x", "((lambda () 'x))"],
                 \[[1, [2, [3, []]]], "(cons 1 '(2 3))"],
                 \[[1, [2, [3, []]]], "(cons 1 (quote (2 3)))"],
+                \['#t', '(and)'],
+                \['#t', '(and (and 1 2 (and 3) (and) #t) #t)'],
+                \['#f', '(and (and 1 2 (and #f) (and) #t) #t)'],
                 \['#t', '(and (> 5 3))'],
                 \['#f', '(and (> 5 3) (> 1 3))'],
                 \['#f', '(and (> 1 3))'],
@@ -96,10 +99,10 @@ function! tests#vl#TestVimLisp() abort
                 \['#t', "(begin (define l '(1 2)) (eq? l l))"],
                 \[[1, 2], "'(1 . 2)"],
                 \[[1, [2, [3, []]]], "'(1 . (2 3))"],
-                \[5, '(let ((x 0)) (while ((< x 5)) (set! x (+ x 1))) x)'],
-                \[50, '(let ((x 0) (y 0)) (while ((< (+ x y) 100)) (set! x (+ x 1)) (set! y (+ y 1))) y)'],
-                \[6, '(begin (+ 3 3))'],
                 \])
+                "\[5, '(let ((x 0)) (while ((< x 5)) (set! x (+ x 1))) x)'],
+                "\[0, '(let ((x 0) (y 0)) (while ((< x 5)) (set! x (+ x 1))) y)'],
+                "\[50, '(let ((x 0) (y 0)) (while ((< (+ x y) 100)) (set! x (+ x 1)) (set! y (+ y 1))) y)'],
 
     call RunTests([
                 \["hello, world", vlutils#PrettyPrint(vl#Eval('"hello, world"'))],
@@ -148,10 +151,13 @@ function! s:Benchmark(desc, func, n) abort
 endfunction
 
 function! tests#vl#Benchmark() abort
-    let e = "(begin (define double (lambda (x) (+ x x)) (double (double (double 7)))))"
-    let Func = {-> vl#Eval(e)}
-    call s:Benchmark("nested double function call", Func, 200)
-    let e = '(let ((x 0) (y 0)) (while ((< (+ x y) 100)) (set! x (+ x 1)) (set! y (+ y 1))) y)'
+"    let e = "(begin (define double (lambda (x) (+ x x)) (double (double (double 7)))))"
+"    let Func = {-> vl#Eval(e)}
+"    call s:Benchmark("nested double function call", Func, 200)
+"    let e = '(let ((x 0) (y 0)) (while ((< (+ x y) 100)) (set! x (+ x 1)) (set! y (+ y 1))) y)'
+"    let Func = {-> vl#Eval(e)}
+"    call s:Benchmark("while loop 50 reps", Func, 200)
+    let e = "(begin (define ! (lambda (n) (if (equal? n 0) 1 (* n (! (- n 1)))))) (! 10))"
     let Func = {-> vl#Eval(e)}
     call s:Benchmark("while loop 50 reps", Func, 200)
 endfunction
