@@ -2,6 +2,7 @@ let g:vl_t_pair = "t_pair"
 let g:vl_t_sym = "t_sym"
 let g:vl_t_lstr = "t_lstr"
 let g:vl_t_void = "t_void"
+let g:vl_t_err = "t_err"
 let g:vl_bool_t = "#t"
 let g:vl_bool_f = "#f"
 let g:VL_INITIAL_ENV = vlenv#BuildInitialEnv()
@@ -37,7 +38,7 @@ function! VlEvalMultiline(lines) abort
     let lines = map(a:lines, {_, l -> s:CleanLine(l)})
     let lines = filter(lines, {_, l -> match(l, '\(^;\+\)\|^$') == -1})
     let source = join(lines)
-    let exprs = vl#SplitExprs(source)
+    let exprs = vlparse#SplitExprs(source)
     for expr in exprs
         call vl#Eval(expr)
     endfor

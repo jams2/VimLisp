@@ -157,3 +157,35 @@ function! s:DeepLispList(elts) abort
         return vl#Cons(a:elts[0], s:DeepLispList(a:elts[1:]))
     endif
 endfunction
+
+function! vlparse#SplitExprs(source) abort
+    let remaining = a:source
+    let exprs = []
+    while len(remaining) > 0
+        if remaining[0] =~ '\s'
+            let remaining = remaining[1:]
+            continue
+        endif
+        let exprlen = vlparse#ExprLen(remaining)
+        let nextexpr = remaining[:exprlen-1]
+        call add(exprs, nextexpr)
+        let remaining = remaining[exprlen:]
+    endwhile
+    return exprs
+endfunction
+
+function! vlparse#ExprLen(tokens) abort
+    let first = a:tokens[0]
+    if first == s:L_PAREN
+        return s:NestedNonTerminalLen(a:tokens)
+    elseif first == s:D_QUOTE
+        return s:NonTerminalLen(a:tokens)
+    elseif first == s:QUOTE
+        if a:tokens[1] == s:L_PAREN
+            return 1 + s:NestedNonTerminalLen(a:tokens[1:])
+        endif
+        return 2
+    else
+        return 1
+    endif
+endfunction

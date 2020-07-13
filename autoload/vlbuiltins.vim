@@ -7,6 +7,13 @@ let s:lt = {x, y -> x < y ? g:vl_bool_t : g:vl_bool_f}
 let s:gte = {x, y -> x >= y ? g:vl_bool_t : g:vl_bool_f}
 let s:lte = {x, y -> x <= y ? g:vl_bool_t : g:vl_bool_f}
 
+function! s:PrettyPrintErr(err) abort
+    return vlutils#PrettyPrint(vl#Cdr(a:err))
+endfunction
+
+let s:ERR_OPS = {
+            \}
+
 let s:PAIR_OPS = {
             \'to_str': funcref("vlutils#PrintPair"),
             \}
@@ -57,6 +64,7 @@ let s:BUILTINS = {
             \g:vl_t_void: s:UNTYPED_OPS,
             \g:vl_t_pair: s:PAIR_OPS,
             \g:vl_t_sym: s:SYM_OPS,
+            \g:vl_t_err: s:ERR_OPS,
             \}
 
 function! vlbuiltins#ApplyGeneric(op, args) abort
