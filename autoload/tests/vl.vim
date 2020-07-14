@@ -35,6 +35,7 @@ function! tests#vl#TestVimLisp() abort
     endfunction
 
     call RunEvalTests([
+                \[[1, 2], '(cons 1 (call/cc (lambda (k) (k 2))))'],
                 \[["condition", [123, []]], '(raise 123)'],
                 \[[1, [2, []]], "'(1 . (2 . ()))"],
                 \[[1, []], "'(1 . ())"],
@@ -53,11 +54,11 @@ function! tests#vl#TestVimLisp() abort
                 \[0, '(set! x 3)'],
                 \[4, '(begin 1 2 4)'],
                 \[3, '(begin (define x 3) x)'],
+                \[9, '((lambda () 5 7 9))'],
                 \[7, '(call/cc (lambda (k) 7))'],
                 \[7, '(call/cc (lambda (k) (k 7)))'],
-                \[9, '((lambda () 5 7 9))'],
                 \[-2, '(+ 1 (call/cc (lambda (k) (k -3))))'],
-                \[0, '(+ 1 (call/cc (lambda (k) 0)))'],
+                \[1, '(+ 1 (call/cc (lambda (k) 0)))'],
                 \[4, '(+ 1 (call/cc (lambda (k) (k 3))))'],
                 \[7, '(let ((x 3) (y 4)) (+ x y))'],
                 \[7, '((lambda (x y) (+ x y)) 3 4)'],

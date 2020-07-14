@@ -19,9 +19,7 @@ function! s:PushK(k) abort
 endfunction
 
 function! s:PopK() abort
-    let Kn = s:K_STACK[-1]
-    let s:K_STACK = s:K_STACK[:-2]
-    return Kn
+    return remove(s:K_STACK, len(s:K_STACK)-1)
 endfunction
 
 function! s:PushKVal(val) abort
@@ -29,9 +27,7 @@ function! s:PushKVal(val) abort
 endfunction
 
 function! s:PopKVal() abort
-    let val = s:KVAL_STACK[-1]
-    let s:KVAL_STACK = s:KVAL_STACK[:-2]
-    return val
+    return remove(s:KVAL_STACK, -1)
 endfunction
 
 function! s:PushHandler(val) abort
@@ -39,9 +35,7 @@ function! s:PushHandler(val) abort
 endfunction
 
 function! s:PopHandler() abort
-    let Handler = s:HANDLER_STACK[-1]
-    let s:HANDLER_STACK = s:HANDLER_STACK[:-2]
-    return Handler
+    return remove(s:HANDLER_STACK, -1)
 endfunction
 
 function! s:EndCont(val) abort
@@ -78,6 +72,7 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let syntax = vlparse#Parse(tokens)
+    call s:PushK(funcref("s:EndCont"))
     call s:PushHandler(funcref("vl#TopLevelHandler"))
     let s:EXPR_R = syntax
     let s:CLOSURE_R = vl#Analyze()
@@ -102,7 +97,6 @@ function! vl#TypeOf(obj) abort
 endfunction
 
 function! vl#Analyze() abort
-    call s:PushK(funcref("s:EndCont"))
     let expr = vltrns#Transform(s:EXPR_R)
     let s:COUNTER += 1
     if type(expr) == v:t_number
@@ -168,11 +162,16 @@ function! s:GenLookup(expr) abort
 endfunction
 
 function! s:Sequentially(closures) abort
+    " The first n-1 expressions in a sequence should be
+    " executed only for effect. The value of the last
+    " expression becomes the value of the sequence.
+    " We therefore need to push an 'empty' continuation
+    " for each of the first n-1 expressions.
     let fname = "SequenceClosure"..s:COUNTER
     let closures = a:closures
     function! {fname}() closure abort
-        call s:PushK({x -> x})
         while vl#Cdr(closures) != []
+            call s:PushK({_ -> 0})
             let s:CLOSURE_R = closures[0]
             call s:EvalClosure()
             let closures = closures[1]
@@ -191,8 +190,8 @@ function! s:AndSequentially(closures) abort
             call s:PushKVal(g:vl_bool_t)
             return s:ApplyK()
         endif
-        call s:PushK({x -> x})
         while vl#Cdr(closures) != []
+            call s:PushK({x -> x})
             let s:CLOSURE_R = closures[0]
             if !s:IsTrue(s:EvalClosure())
                 call s:PushKVal(g:vl_bool_f)
@@ -255,7 +254,6 @@ function! s:ApplyProc() abort
     elseif vl#Car(rator) =~? '^cont-prim$'
         let fname = "ApplyContPrim"..s:COUNTER
         function {fname}() closure abort
-            call s:PopK()
             call s:PushKVal(vl#Car(rands))
             return s:ApplyK()
         endfunction
