@@ -159,7 +159,7 @@ function! tests#vl#Benchmark() abort
 "    let e = '(let ((x 0) (y 0)) (while ((< (+ x y) 100)) (set! x (+ x 1)) (set! y (+ y 1))) y)'
 "    let Func = {-> vl#Eval(e)}
 "    call s:Benchmark("while loop 50 reps", Func, 200)
-    let e = "(begin (define ! (lambda (n) (if (equal? n 0) 1 (* n (! (- n 1)))))) (! 10))"
+    let e = "(begin (define ! (lambda (n) (if (equal? n 0) 1 (* n (! (- n 1)))))) (! 20))"
     let Func = {-> vl#Eval(e)}
-    call s:Benchmark("while loop 50 reps", Func, 200)
+    call s:Benchmark("fact 20", Func, 1000)
 endfunction
