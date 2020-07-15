@@ -1,7 +1,7 @@
 let s:PREV_FRAME_KEY = "__prev_frame"
-let s:COUNTER = 0
 
 function! s:InitRegisters() abort
+    let s:COUNTER = 0
     let s:EXPR_R = -1
     let s:CLOSURE_R = -1
     let s:CLOSURE_LIST_R = -1
@@ -9,9 +9,22 @@ function! s:InitRegisters() abort
     let s:K_STACK = []
     let s:KVAL_STACK = []
     let s:HANDLER_STACK = []
+    let s:LABELS = []
     let s:ERR_R = -1
     let s:PROC_RATOR_R = -1
     let s:PROC_ARGS_R = -1
+endfunction
+
+function! s:GenLabel(name) abort
+    let label = a:name..s:COUNTER
+    call add(s:LABELS, label)
+    return label
+endfunction
+
+function! s:Cleanup() abort
+    for label in uniq(s:LABELS)
+        eval("delf "..label)
+    endfor
 endfunction
 
 function! s:PushHandler(val) abort
@@ -60,7 +73,9 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     let s:CLOSURE_R = vl#Analyze()
     let s:ENV_R = a:env
     let Bounce = s:EvalClosure()
-    return s:Trampoline(Bounce)
+    let val = s:Trampoline(Bounce)
+    call s:Cleanup()
+    return val
 endfunction
 
 function! vl#TypeOf(obj) abort
@@ -117,7 +132,7 @@ function! vl#Analyze() abort
 endfunction
 
 function! s:GenRaise(condition) abort
-    let fname = "Condition"..s:COUNTER
+    let fname = s:GenLabel("Condition")
     function! {fname}() closure abort
         let s:ERR_R = a:condition
         return s:ApplyHandler()
@@ -126,7 +141,7 @@ function! s:GenRaise(condition) abort
 endfunction
 
 function! s:GenConst(expr) abort
-    let fname = "Closure"..s:COUNTER
+    let fname = s:GenLabel("Closure")
     function! {fname}() closure abort
         call add(s:KVAL_STACK, a:expr)
         return s:ApplyK()
@@ -135,7 +150,7 @@ function! s:GenConst(expr) abort
 endfunction
 
 function! s:GenLookup(expr) abort
-    let fname = "Closure"..s:COUNTER
+    let fname = s:GenLabel("Closure")
     function! {fname}() closure abort
         call add(s:KVAL_STACK, s:ApplyEnv(s:ENV_R, a:expr))
         return s:ApplyK()
@@ -149,7 +164,7 @@ function! s:Sequentially(closures) abort
     " expression becomes the value of the sequence.
     " We therefore need to push an 'empty' continuation
     " for each of the first n-1 expressions.
-    let fname = "SequenceClosure"..s:COUNTER
+    let fname = s:GenLabel("SequenceClosure")
     let closures = a:closures
     function! {fname}() closure abort
         let K = {_ -> 0}
@@ -166,7 +181,7 @@ function! s:Sequentially(closures) abort
 endfunction
 
 function! s:AndSequentially(closures) abort
-    let fname = "AndClosure"..s:COUNTER
+    let fname = s:GenLabel("AndClosure")
     let closures = a:closures
     function! {fname}() closure abort
         if closures == []
@@ -196,15 +211,15 @@ function! s:ApplyProc() abort
     let rator = s:PROC_RATOR_R
     let rands = s:PROC_ARGS_R
     if vl#Car(rator) =~? '^prim$'
-        let fname = "PrimitiveApply"..s:COUNTER
+        let fname = s:GenLabel("PrimitiveApply")
         function! {fname}() closure abort
             call add(s:KVAL_STACK, vl#Cdr(rator)(rands))
             return s:ApplyK()
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^cont-prim$'
-        let fname = "ApplyContPrim"..s:COUNTER
-        function {fname}() closure abort
+        let fname = s:GenLabel("ApplyContPrim")
+        function! {fname}() closure abort
             call add(s:KVAL_STACK, vl#Car(rands))
             return s:ApplyK()
         endfunction
@@ -213,7 +228,7 @@ function! s:ApplyProc() abort
         let Body = s:ProcBody(rator)
         let env = s:ProcEnv(rator)
         let params = s:ProcParams(rator)
-        let fname = "ProcBounce"..s:COUNTER
+        let fname = s:GenLabel("ProcBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
             let s:ENV_R = s:ExtendEnv(env, params, rands)
@@ -225,7 +240,7 @@ function! s:ApplyProc() abort
         let env = s:ProcEnv(rator)
         let params = s:ProcParams(rator)
         let rands = vl#Cons(extend(["cont-prim"], rands), [])
-        let fname = "ContBounce"..s:COUNTER
+        let fname = s:GenLabel("ContBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
             let s:ENV_R = s:ExtendEnv(env, params, rands)
@@ -360,8 +375,8 @@ function! s:EvalClosureList() abort
         call add(s:KVAL_STACK, [])
         return s:ApplyK()
     endif
-    let outercontname = "EvalClosureListOuterCont"..s:COUNTER
-    let innercontname = "EvalClosureListInnerCont"..s:COUNTER
+    let outercontname = s:GenLabel("EvalClosureListOuterCont")
+    let innercontname = s:GenLabel("EvalClosureListInnerCont")
     function! {outercontname}(arg) closure abort
         function! {innercontname}(args) closure abort
             call add(s:KVAL_STACK, vl#Cons(a:arg, a:args))
@@ -377,7 +392,7 @@ function! s:EvalClosureList() abort
 endfunction
 
 function! s:RandsCont(rator) abort
-    let fname = "RandsCont"..s:COUNTER
+    let fname = s:GenLabel("RandsCont")
     function! {fname}(args) closure abort
         let s:PROC_RATOR_R = a:rator
         let s:PROC_ARGS_R = a:args
@@ -387,7 +402,7 @@ function! s:RandsCont(rator) abort
 endfunction
 
 function! s:RatorCont(rands) abort
-    let fname = "RatorCont"..s:COUNTER
+    let fname = s:GenLabel("RatorCont")
     function! {fname}(rator) closure abort
         call add(s:K_STACK, s:RandsCont(a:rator))
         let s:CLOSURE_LIST_R = a:rands
@@ -400,7 +415,7 @@ function! s:GenApplication(expr) abort
     let s:EXPR_R = vl#Car(a:expr)
     let Rator = vl#Analyze()
     let rands = vl#LispMap(funcref("s:MapAnalyze"), vl#Cdr(a:expr))
-    let fname = "ApplicationClosure"..s:COUNTER
+    let fname = s:GenLabel("ApplicationClosure")
     function! {fname}() closure abort
         let s:CLOSURE_R = Rator
         call add(s:K_STACK, s:RatorCont(rands))
@@ -412,8 +427,8 @@ endfunction
 function! s:GenDefine(expr) abort
     let s:EXPR_R = vl#Caddr(a:expr)
     let ValClosure = vl#Analyze()
-    let contname = "DefineCont"..s:COUNTER
-    let fname = "DefineClosure"..s:COUNTER
+    let contname = s:GenLabel("DefineCont")
+    let fname = s:GenLabel("DefineClosure")
     function! {fname}() closure abort
         function! {contname}(val) closure abort
             call add(s:KVAL_STACK, s:DefineVar(s:ENV_R, vl#Cadr(a:expr), a:val))
@@ -430,7 +445,7 @@ function! s:AnalyzeCallCCProc() abort
     let expr = s:EXPR_R
     let params = vl#Cadr(expr)
     let Body = s:GenSequence(vl#Cddr(expr), funcref("s:Sequentially"))
-    let fname = "CallCCK"..s:COUNTER
+    let fname = s:GenLabel("CallCCK")
     function! {fname}() closure abort
         call add(s:KVAL_STACK, vl#LispList(["cont", params, Body, s:ENV_R]))
         return s:ApplyK()
@@ -441,8 +456,8 @@ endfunction
 function! s:GenCallCC(expr) abort
     let s:EXPR_R = vl#Cadr(a:expr)
     let Proc = s:AnalyzeCallCCProc()
-    let fname = "CallCC"..s:COUNTER
-    let contname = "CallCCK"..s:COUNTER
+    let fname = s:GenLabel("CallCC")
+    let contname = s:GenLabel("CallCCK")
     function! {fname}() closure abort
         function! {contname}(rator) closure abort
             let s:PROC_RATOR_R = a:rator
@@ -459,7 +474,7 @@ endfunction
 function! s:GenProc(expr) abort
     let params = vl#Cadr(a:expr)
     let Body = s:GenSequence(vl#Cddr(a:expr), funcref("s:Sequentially"))
-    let fname = "ProcClosure"..s:COUNTER
+    let fname = s:GenLabel("ProcClosure")
     function! {fname}() closure abort
         call add(s:KVAL_STACK, vl#LispList(["proc", params, Body, s:ENV_R]))
         return s:ApplyK()
@@ -474,7 +489,7 @@ endfunction
 function! s:GenCond(expr) abort
     let s:EXPR_R = vl#Cadr(a:expr)
     let P_clsr = vl#Analyze()
-    let consequentname = "CondConsequent"..s:COUNTER
+    let consequentname = s:GenLabel("CondConsequent")
     function! {consequentname}() closure abort
         let s:EXPR_R = vl#Caddr(a:expr)
         let s:CLOSURE_R = vl#Analyze()
@@ -483,7 +498,7 @@ function! s:GenCond(expr) abort
     let C_clsr = funcref(consequentname)
 
     let alt = vlutils#IsEmptyList(vl#Cdddr(a:expr)) ? g:vl_bool_f : vl#Cadddr(a:expr)
-    let altname = "CondAlt"..s:COUNTER
+    let altname = s:GenLabel("CondAlt")
     function! {altname}() closure abort
         let s:EXPR_R = alt
         let s:CLOSURE_R = vl#Analyze()
@@ -491,8 +506,8 @@ function! s:GenCond(expr) abort
     endfunction
     let A_clsr = funcref(altname)
 
-    let fname = "CondClosure"..s:COUNTER
-    let contname = "CondCont"..s:COUNTER
+    let fname = s:GenLabel("CondClosure")
+    let contname = s:GenLabel("CondCont")
     function! {fname}() closure abort
         function! {contname}(res) closure abort
             if s:IsTrue(a:res)
@@ -513,8 +528,8 @@ endfunction
 function! s:GenSetBang(expr) abort
     let s:EXPR_R = vl#Caddr(a:expr)
     let ValClosure = vl#Analyze()
-    let contname = "SetBangCont"..s:COUNTER
-    let fname = "SetBangClosure"..s:COUNTER
+    let contname = s:GenLabel("SetBangCont")
+    let fname = s:GenLabel("SetBangClosure")
     function! {fname}() closure abort
         function! {contname}(val) closure abort
             call add(s:KVAL_STACK, s:SetVar(s:ENV_R, vl#Cadr(a:expr), a:val))
