@@ -1,5 +1,3 @@
-let s:PREV_FRAME_KEY = "__prev_frame"
-
 function! s:InitRegisters() abort
     let s:COUNTER = 0
     let s:EXPR_R = -1
@@ -16,7 +14,7 @@ function! s:InitRegisters() abort
 endfunction
 
 function! s:GenLabel(name) abort
-    let label = a:name..s:COUNTER
+    let label = "s:"..a:name..s:COUNTER
     call add(s:LABELS, label)
     return label
 endfunction
@@ -63,7 +61,7 @@ function! s:EvalClosure() abort
     return s:CLOSURE_R()
 endfunction
 
-function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
+function! vl#Eval(expr, env=vlenv#BuildInitialEnv()) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let syntax = vlparse#Parse(tokens)
@@ -95,6 +93,7 @@ endfunction
 
 function! vl#Analyze() abort
     let expr = vltrns#Transform(s:EXPR_R)
+    "let expr = vltrns#SubReferences(expr)
     let s:COUNTER += 1
     if type(expr) == v:t_number
         return s:GenConst(expr)
@@ -227,23 +226,24 @@ function! s:ApplyProc() abort
     elseif vl#Car(rator) =~? '^proc$'
         let Body = s:ProcBody(rator)
         let env = s:ProcEnv(rator)
-        let params = s:ProcParams(rator)
+        let params = vlutils#FlattenList(s:ProcParams(rator))
+        let rands = vlutils#FlattenList(rands)
         let fname = s:GenLabel("ProcBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            let s:ENV_R = s:ExtendEnv(env, params, rands)
+            let s:ENV_R = vl#ExtendEnv(env, params, rands)
             return s:EvalClosure()
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^cont$'
         let Body = s:ProcBody(rator)
         let env = s:ProcEnv(rator)
-        let params = s:ProcParams(rator)
-        let rands = vl#Cons(extend(["cont-prim"], rands), [])
+        let params = vlutils#FlattenList(s:ProcParams(rator))
+        let rands = [extend(["cont-prim"], vlutils#FlattenList(rands))]
         let fname = s:GenLabel("ContBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            let s:ENV_R = s:ExtendEnv(env, params, rands)
+            let s:ENV_R = vl#ExtendEnv(env, params, rands)
             return s:EvalClosure()
         endfunction
         return funcref(fname)
@@ -311,38 +311,40 @@ function! s:DeepLispMap(proc, l) abort
 endfunction
 
 function! s:ApplyEnv(env, var) abort
-    let i = len(a:env) - 1
-    while i >= 0
-        for j in range(len(a:env[i][0]))
-            if a:env[i][0][j] == a:var
-                return a:env[i][1][j]
+    let e = a:env
+    while e != []
+        for j in range(len(e[0][0]))
+            if e[0][0][j] == a:var
+                return e[0][1][j]
             endif
         endfor
-        let i -= 1
+        let e = e[1]
     endwhile
     throw "Unbound variable: "..a:var
 endfunction
 
-function! s:ExtendEnv(env, vars, vals) abort
-    return add(a:env, [a:vars, a:vals])
+function! vl#ExtendEnv(env, vars, vals) abort
+    return [[a:vars, a:vals], a:env]
 endfunction
 
 function! s:SetVar(env, var, val) abort
-    let i = len(a:env) - 1
-    while i >= 0
-        for j in range(len(a:env[i][0]))
-            if a:env[i][0][j] == a:var
-                let a:env[i][1][j] = a:val
+    let e = a:env
+    while e != []
+        for j in range(len(e[0][0]))
+            if e[0][0][j] == a:var
+                let e[0][1][j] = a:val
+                return 1
             endif
         endfor
-        let i -= 1
+        let e = e[1]
     endwhile
     throw "Unbound variable: "..a:var
 endfunction
 
 function! s:DefineVar(env, var, val) abort
-    let a:env[-1][0] = add(a:env[-1][0], a:var)
-    let a:env[-1][1] = add(a:env[-1][1], a:var)
+    let a:env[0][0] = add(a:env[0][0], a:var)
+    let a:env[0][1] = add(a:env[0][1], a:val)
+    return 1
 endfunction
 
 function! s:MapAnalyze(expr) abort
