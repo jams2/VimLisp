@@ -311,39 +311,38 @@ function! s:DeepLispMap(proc, l) abort
 endfunction
 
 function! s:ApplyEnv(env, var) abort
-    if has_key(a:env, a:var)
-        return get(a:env, a:var)
-    elseif has_key(a:env, s:PREV_FRAME_KEY)
-        return s:ApplyEnv(get(a:env, s:PREV_FRAME_KEY), a:var)
-    else
-        throw "Unbound variable: "..a:var
-    endif
+    let i = len(a:env) - 1
+    while i >= 0
+        for j in range(len(a:env[i][0]))
+            if a:env[i][0][j] == a:var
+                return a:env[i][1][j]
+            endif
+        endfor
+        let i -= 1
+    endwhile
+    throw "Unbound variable: "..a:var
 endfunction
 
 function! s:ExtendEnv(env, vars, vals) abort
-    let new_frame = {s:PREV_FRAME_KEY: a:env}
-    let var_l = a:vars
-    let val_l = a:vals
-    while !vlutils#IsEmptyList(var_l)
-        let new_frame[vl#Car(var_l)] = vl#Car(val_l)
-        let var_l = vl#Cdr(var_l)
-        let val_l = vl#Cdr(val_l)
-    endwhile
-    return new_frame
+    return add(a:env, [a:vars, a:vals])
 endfunction
 
 function! s:SetVar(env, var, val) abort
-    if has_key(a:env, a:var)
-        let a:env[a:var] = a:val
-    elseif has_key(a:env, s:PREV_FRAME_KEY)
-        return s:SetVar(get(a:env, s:PREV_FRAME_KEY), a:var)
-    else
-        throw "Unbound variable: "..a:var
-    endif
+    let i = len(a:env) - 1
+    while i >= 0
+        for j in range(len(a:env[i][0]))
+            if a:env[i][0][j] == a:var
+                let a:env[i][1][j] = a:val
+            endif
+        endfor
+        let i -= 1
+    endwhile
+    throw "Unbound variable: "..a:var
 endfunction
 
 function! s:DefineVar(env, var, val) abort
-    let a:env[a:var] = a:val
+    let a:env[-1][0] = add(a:env[-1][0], a:var)
+    let a:env[-1][1] = add(a:env[-1][1], a:var)
 endfunction
 
 function! s:MapAnalyze(expr) abort
