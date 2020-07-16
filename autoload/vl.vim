@@ -65,9 +65,13 @@ function! vl#Eval(expr, env=vlenv#BuildInitialEnv()) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let syntax = vlparse#Parse(tokens)
+    if type(syntax) == v:t_list
+        let syntax = vltrns#Transform(syntax)
+    endif
+    "call vltrns#ScanLambdas(syntax)
+    let s:EXPR_R = syntax
     call add(s:K_STACK, funcref("s:EndCont"))
     call s:PushHandler(funcref("vl#TopLevelHandler"))
-    let s:EXPR_R = syntax
     let s:CLOSURE_R = vl#Analyze()
     let s:ENV_R = a:env
     let Bounce = s:EvalClosure()
@@ -92,9 +96,8 @@ function! vl#TypeOf(obj) abort
 endfunction
 
 function! vl#Analyze() abort
-    let expr = vltrns#Transform(s:EXPR_R)
-    "let expr = vltrns#SubReferences(expr)
     let s:COUNTER += 1
+    let expr = s:EXPR_R
     if type(expr) == v:t_number
         return s:GenConst(expr)
     elseif type(expr) == v:t_string

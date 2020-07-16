@@ -8,7 +8,7 @@ function! tests#vl#TestVimLisp() abort
         let e = "(lambda (x y) ((lambda (z) (x y z))))"
         let e = vlparse#Parse(vlparse#Tokenize(e))
         call vltrns#ScanLambdas(e)
-        echo e
+        "echo e
     endfunction
 
     call s:TestSubRefer()

@@ -14,16 +14,24 @@ function! s:RegisterTransformers(transformers) abort
 endfunction
 
 function! vltrns#Transform(expr) abort
-    if type(vl#Car(a:expr)) == v:t_list
+    if vlutils#IsEmptyList(a:expr) || type(a:expr) != v:t_list
         return a:expr
-    elseif has_key(s:VL_TRANSFORMERS, vl#Car(a:expr))
-        return get(s:VL_TRANSFORMERS, vl#Car(a:expr))(a:expr)
+    elseif type(a:expr[0]) == v:t_list
+        return [vltrns#Transform(a:expr[0]), vltrns#Transform(a:expr[1])]
+    elseif type(a:expr[0]) != v:t_string || a:expr[0] == "vlobj"
+        return [a:expr[0], vltrns#Transform(a:expr[1])]
+    elseif has_key(s:VL_TRANSFORMERS, a:expr[0])
+        let transformed = get(s:VL_TRANSFORMERS, a:expr[0])(a:expr)
+        if type(transformed) != v:t_list
+            return transformed
+        endif
+        return [vltrns#Transform(transformed[0]), vltrns#Transform(transformed[1])]
+    else
+        return [a:expr[0], vltrns#Transform(a:expr[1])]
     endif
-    return a:expr
 endfunction
 
 function! s:SubRefer(expr, bound=[])
-    "echo "SubRefer: "..string(a:expr)
     let boundvars = extend([vlutils#FlattenList(vl#Cadr(a:expr))], a:bound)
     let body = vl#Caddr(a:expr)
     while body != []
