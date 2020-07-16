@@ -130,8 +130,6 @@ endfunction
 function! s:ParseAtom(token) abort
     if a:token =~ s:NUMBER_R
         return a:token - 0
-    elseif a:token =~ s:STRING_CONST_R
-        return a:token
     elseif a:token =~? s:SYMBOL_R
         return a:token
     elseif a:token =~? s:BOOL_R

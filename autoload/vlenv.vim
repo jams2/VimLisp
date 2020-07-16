@@ -19,6 +19,6 @@ let s:vals = [
             \]
 
 function! vlenv#BuildInitialEnv() abort
-    let env = [[s:vars, s:vals]]
+    let env = [[s:vars, s:vals], []]
     return env
 endfunction

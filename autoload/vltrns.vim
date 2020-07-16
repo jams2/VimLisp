@@ -22,6 +22,46 @@ function! vltrns#Transform(expr) abort
     return a:expr
 endfunction
 
+function! s:SubRefer(expr, bound=[])
+    "echo "SubRefer: "..string(a:expr)
+    let boundvars = extend([vlutils#FlattenList(vl#Cadr(a:expr))], a:bound)
+    let body = vl#Caddr(a:expr)
+    while body != []
+        if type(body[0]) == v:t_list
+            call vltrns#ScanLambdas(body[0], boundvars)
+        elseif type(body[0]) == v:t_string
+            let reference = []
+            for i in range(len(boundvars))
+                for j in range(len(boundvars[i]))
+                    if boundvars[i][j] == body[0]
+                        let reference = ["refer", [i, j]]
+                        break
+                    endif
+                endfor
+                if reference != []
+                    let body[0] = reference
+                    break
+                endif
+            endfor
+        endif
+        let body = body[1]
+    endwhile
+endfunction
+
+function! vltrns#ScanLambdas(expr, scope=[]) abort
+    if vlutils#IsEmptyList(a:expr)
+        return
+    elseif type(a:expr[0]) == v:t_list
+        call vltrns#ScanLambdas(a:expr[0], a:scope)
+    elseif a:expr[0] == "quote"
+        return
+    elseif a:expr[0] == "lambda"
+        call s:SubRefer(a:expr, a:scope)
+        return
+    endif
+    call vltrns#ScanLambdas(a:expr[1], a:scope)
+endfunction
+
 function! s:CondToIf(expr) abort
     let clauses = vl#Cdr(a:expr)
     return s:TransformCond(clauses)

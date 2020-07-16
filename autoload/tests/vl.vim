@@ -1,8 +1,17 @@
 function! tests#vl#TestVimLisp() abort
     function! TestVlEval(expr) abort
-        let TEST_ENV = #{x: 3, __prev_frame: g:VL_INITIAL_ENV}
+        let TEST_ENV = vl#ExtendEnv(vlenv#BuildInitialEnv(), ["x"], [3])
         return vl#Eval(a:expr, TEST_ENV)
     endfunction
+
+    function! s:TestSubRefer() abort
+        let e = "(lambda (x y) ((lambda (z) (x y z))))"
+        let e = vlparse#Parse(vlparse#Tokenize(e))
+        call vltrns#ScanLambdas(e)
+        echo e
+    endfunction
+
+    call s:TestSubRefer()
 
     function! RunTests(tests) abort
         let [success, fail] = [0, 0]
@@ -48,10 +57,10 @@ function! tests#vl#TestVimLisp() abort
                 \[10, '(* 5 2)'],
                 \[3, '(/ 12 4)'],
                 \[3, '(+ 1 2)'],
-                \[0, "(define x 3)"],
+                \[1, "(define x 3)"],
                 \[12, '((lambda (x y) (+ x y)) 5 7)'],
-                \[0, '(define x "hello, world")'],
-                \[0, '(set! x 3)'],
+                \[1, '(define x "hello, world")'],
+                \[1, '(set! x 3)'],
                 \[4, '(begin 1 2 4)'],
                 \[3, '(begin (define x 3) x)'],
                 \[9, '((lambda () 5 7 9))'],

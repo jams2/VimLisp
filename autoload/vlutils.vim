@@ -1,3 +1,21 @@
+let s:NODE_ELT = 0
+let s:NODE_L = 1
+let s:NODE_R = 2
+
+function! vlutils#LispIndexOf(elt, l) abort
+    let index = 0
+    let found = -1
+    let list = a:l
+    while !vlutils#IsEmptyList(list)
+        if a:elt == list[0]
+            return index
+        endif
+        let list = list[1]
+        let index += 1
+    endwhile
+    return found
+endfunction
+
 function! vlutils#IsEmptyList(obj) abort
     return type(a:obj) == v:t_list && a:obj == []
 endfunction

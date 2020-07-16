@@ -224,9 +224,9 @@ function! s:ApplyProc() abort
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^proc$'
-        let Body = s:ProcBody(rator)
+        let Body = vl#ProcBody(rator)
         let env = s:ProcEnv(rator)
-        let params = vlutils#FlattenList(s:ProcParams(rator))
+        let params = vlutils#FlattenList(vl#ProcParams(rator))
         let rands = vlutils#FlattenList(rands)
         let fname = s:GenLabel("ProcBounce")
         function! {fname}() closure abort
@@ -236,9 +236,9 @@ function! s:ApplyProc() abort
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^cont$'
-        let Body = s:ProcBody(rator)
+        let Body = vl#ProcBody(rator)
         let env = s:ProcEnv(rator)
-        let params = vlutils#FlattenList(s:ProcParams(rator))
+        let params = vlutils#FlattenList(vl#ProcParams(rator))
         let rands = [extend(["cont-prim"], vlutils#FlattenList(rands))]
         let fname = s:GenLabel("ContBounce")
         function! {fname}() closure abort
@@ -357,7 +357,7 @@ function! s:GenSequence(expr, sequencer) abort
     return a:sequencer(closures)
 endfunction
 
-function! s:ProcParams(proc) abort
+function! vl#ProcParams(proc) abort
     return vl#Cadr(a:proc)
 endfunction
 
@@ -365,7 +365,7 @@ function! s:ProcEnv(proc) abort
     return vl#Cadddr(a:proc)
 endfunction
 
-function! s:ProcBody(proc) abort
+function! vl#ProcBody(proc) abort
     return vl#Caddr(a:proc)
 endfunction
 
