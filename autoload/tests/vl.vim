@@ -42,6 +42,7 @@ function! tests#vl#TestVimLisp() abort
     endfunction
 
     call RunEvalTests([
+                \[5, '((lambda (x) ((lambda (y) y x x) x)) 5)'],
                 \[5, '(let ((x 3)) (let ((x 5)) x (+ 1 2) x))'],
                 \[4, '(begin 1 (+ 1 2) 4)'],
                 \[[1, 2], "'(1 . 2)"],

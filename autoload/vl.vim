@@ -65,8 +65,9 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let program = vlparse#Parse(tokens)
+    call vltrns#ScanLambdas(program)
+    echo program
     let program = vlparse#ToLisp(program)
-    "call vltrns#ScanLambdas(syntax)
     let s:EXPR_R = program
     call add(s:K_STACK, funcref("s:EndCont"))
     call s:PushHandler(funcref("vl#TopLevelHandler"))
@@ -325,8 +326,8 @@ function! s:ApplyEnv(env, var) abort
         endfor
         let e = e[1]
     endwhile
-    if has_key(e, var)
-        return e[var]
+    if has_key(e, a:var)
+        return e[a:var]
     endif
     throw "Unbound variable: "..a:var
 endfunction

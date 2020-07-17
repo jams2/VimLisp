@@ -1,4 +1,5 @@
 let s:VL_TRANSFORMERS = {}
+let s:LAMBDA = "lambda"
 
 function! s:RegisterTransformer(name, funcref) abort
     if has_key(s:VL_TRANSFORMERS, a:name)
@@ -24,43 +25,53 @@ function! vltrns#Desugar(expr) abort
     return a:expr
 endfunction
 
-function! s:SubRefer(expr, bound=[])
-    let boundvars = extend([vlutils#FlattenList(vl#Cadr(a:expr))], a:bound)
-    let body = vl#Caddr(a:expr)
-    while body != []
-        if type(body[0]) == v:t_list
-            call vltrns#ScanLambdas(body[0], boundvars)
-        elseif type(body[0]) == v:t_string
-            let reference = []
-            for i in range(len(boundvars))
-                for j in range(len(boundvars[i]))
-                    if boundvars[i][j] == body[0]
-                        let reference = ["refer", [i, j]]
-                        break
-                    endif
-                endfor
-                if reference != []
-                    let body[0] = reference
+function! s:SubBoundVarRefs(lambda, scope) abort
+    let boundvars = extend([a:lambda[1]], a:scope)
+    let body = s:SubLambdaBodyRefs(a:lambda[2:], boundvars)
+    return extend(["lambda", a:lambda[1]], body)
+endfunction
+
+function! s:SubLambdaBodyRefs(body, scope) abort
+    let newbody = []
+    for expr in a:body
+        if type(expr) == v:t_list
+            if type(expr[0]) == v:t_string && expr[0] == s:LAMBDA
+                call add(newbody, s:SubBoundVarRefs(expr, a:scope))
+            else
+                call add(newbody, s:SubLambdaBodyRefs(expr, a:scope))
+            endif
+        elseif type(expr) == v:t_string
+            let next = expr
+            for frame in range(len(a:scope))
+                let pos = index(a:scope[frame], expr)
+                if pos > -1
+                    let next = ["refer", [frame, pos]]
                     break
                 endif
             endfor
+            call add(newbody, next)
+        else
+            call add(newbody, expr)
         endif
-        let body = body[1]
-    endwhile
+    endfor
+    return newbody
 endfunction
 
 function! vltrns#ScanLambdas(expr, scope=[]) abort
-    if vlutils#IsEmptyList(a:expr)
-        return
-    elseif type(a:expr[0]) == v:t_list
-        call vltrns#ScanLambdas(a:expr[0], a:scope)
-    elseif a:expr[0] == "quote"
-        return
-    elseif a:expr[0] == "lambda"
-        call s:SubRefer(a:expr, a:scope)
-        return
+    if type(a:expr) != v:t_list || a:expr == []
+        return a:expr
     endif
-    call vltrns#ScanLambdas(a:expr[1], a:scope)
+    let newexpr = []
+    for e in a:expr
+        if type(e) == v:t_list
+            call add(newexpr, vltrns#ScanLambdas(e, a:scope))
+        elseif type(e) == v:t_string && e == s:LAMBDA
+            return add(newexpr, s:SubBoundVarRefs(a:expr, a:scope))
+        else
+            call add(newexpr, e)
+        endif
+    endfor
+    return newexpr
 endfunction
 
 function! s:CondToIf(expr) abort
