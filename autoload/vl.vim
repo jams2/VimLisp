@@ -64,13 +64,10 @@ endfunction
 function! vl#Eval(expr, env=vlenv#BuildInitialEnv()) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
-    let syntax = vlparse#Parse(tokens)
-    let syntax = vlparse#ToLisp(syntax)
-    if type(syntax) == v:t_list
-        let syntax = vltrns#Transform(syntax)
-    endif
+    let program = vlparse#Parse(tokens)
+    let program = vlparse#ToLisp(program)
     "call vltrns#ScanLambdas(syntax)
-    let s:EXPR_R = syntax
+    let s:EXPR_R = program
     call add(s:K_STACK, funcref("s:EndCont"))
     call s:PushHandler(funcref("vl#TopLevelHandler"))
     let s:CLOSURE_R = vl#Analyze()
@@ -98,7 +95,7 @@ endfunction
 
 function! vl#Analyze() abort
     let s:COUNTER += 1
-    let expr = s:EXPR_R
+    let expr = vltrns#Desugar(s:EXPR_R)
     if type(expr) == v:t_number
         return s:GenConst(expr)
     elseif type(expr) == v:t_string

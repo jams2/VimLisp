@@ -13,22 +13,15 @@ function! s:RegisterTransformers(transformers) abort
     endfor
 endfunction
 
-function! vltrns#Transform(expr) abort
+function! vltrns#Desugar(expr) abort
     if vlutils#IsEmptyList(a:expr) || type(a:expr) != v:t_list
         return a:expr
-    elseif type(a:expr[0]) == v:t_list
-        return [vltrns#Transform(a:expr[0]), vltrns#Transform(a:expr[1])]
-    elseif type(a:expr[0]) != v:t_string || a:expr[0] == "vlobj"
-        return [a:expr[0], vltrns#Transform(a:expr[1])]
-    elseif has_key(s:VL_TRANSFORMERS, a:expr[0])
-        let transformed = get(s:VL_TRANSFORMERS, a:expr[0])(a:expr)
-        if type(transformed) != v:t_list
-            return transformed
+    elseif type(a:expr[0]) == v:t_string
+        if has_key(s:VL_TRANSFORMERS, a:expr[0])
+            return get(s:VL_TRANSFORMERS, a:expr[0])(a:expr)
         endif
-        return [vltrns#Transform(transformed[0]), vltrns#Transform(transformed[1])]
-    else
-        return [a:expr[0], vltrns#Transform(a:expr[1])]
     endif
+    return a:expr
 endfunction
 
 function! s:SubRefer(expr, bound=[])
