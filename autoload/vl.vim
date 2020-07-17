@@ -167,14 +167,16 @@ function! s:Sequentially(closures) abort
     " expression becomes the value of the sequence.
     " We therefore need to push an 'empty' continuation
     " for each of the first n-1 expressions.
+    " Evaluating a procedure application returns a bounce,
+    " so we need to trampoline the evaluation of each closure.
     let fname = s:GenLabel("SequenceClosure")
     let closures = a:closures
     function! {fname}() closure abort
-        let K = {_ -> 0}
+        let K = {_ -> "done"}
         while vl#Cdr(closures) != []
             call add(s:K_STACK, K)
             let s:CLOSURE_R = closures[0]
-            call s:EvalClosure()
+            call s:Trampoline(s:EvalClosure())
             let closures = closures[1]
         endwhile
         let s:CLOSURE_R = closures[0]
