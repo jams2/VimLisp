@@ -61,7 +61,7 @@ function! s:EvalClosure() abort
     return s:CLOSURE_R()
 endfunction
 
-function! vl#Eval(expr, env=vlenv#BuildInitialEnv()) abort
+function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let program = vlparse#Parse(tokens)
@@ -314,8 +314,10 @@ function! s:DeepLispMap(proc, l) abort
 endfunction
 
 function! s:ApplyEnv(env, var) abort
+    " The top level env is a dict. Extended envs for procedure
+    " application are a list of values.
     let e = a:env
-    while e != []
+    while type(e) != v:t_dict
         for j in range(len(e[0][0]))
             if e[0][0][j] == a:var
                 return e[0][1][j]
@@ -323,6 +325,9 @@ function! s:ApplyEnv(env, var) abort
         endfor
         let e = e[1]
     endwhile
+    if has_key(e, var)
+        return e[var]
+    endif
     throw "Unbound variable: "..a:var
 endfunction
 
@@ -332,7 +337,7 @@ endfunction
 
 function! s:SetVar(env, var, val) abort
     let e = a:env
-    while e != []
+    while type(e) != v:t_dict
         for j in range(len(e[0][0]))
             if e[0][0][j] == a:var
                 let e[0][1][j] = a:val
@@ -341,12 +346,19 @@ function! s:SetVar(env, var, val) abort
         endfor
         let e = e[1]
     endwhile
+    if has_key(e, var)
+        let e[var] = val
+    endif
     throw "Unbound variable: "..a:var
 endfunction
 
 function! s:DefineVar(env, var, val) abort
-    let a:env[0][0] = add(a:env[0][0], a:var)
-    let a:env[0][1] = add(a:env[0][1], a:val)
+    if type(a:env) == v:t_list
+        let a:env[0][0] = add(a:env[0][0], a:var)
+        let a:env[0][1] = add(a:env[0][1], a:val)
+    else
+        let a:env[a:var] = a:val
+    endif
     return 1
 endfunction
 
