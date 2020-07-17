@@ -112,6 +112,5 @@ function! vltrns#LetToLambda(expr) abort
 endfunction
 
 call s:RegisterTransformers([
-            \["let", funcref("vltrns#LetToLambda")],
             \["cond", funcref("s:CondToIf")],
             \])
