@@ -102,16 +102,16 @@ function! s:TransformCond(clauses) abort
     endif
 endfunction
 
-function! s:LetToLambda(expr) abort
-    let bindings = vl#Cadr(a:expr)
-    let body = vl#Cddr(a:expr)
-    let vars = vl#LispMap({x -> vl#Car(x)}, bindings)
-    let vals = vl#LispMap({x -> vl#Cadr(x)}, bindings)
-    let lambda = vl#Cons("lambda", vl#Cons(vars, body))
-    return vl#Cons(lambda, vals)
+function! vltrns#LetToLambda(expr) abort
+    let bindings = a:expr[1]
+    let body = a:expr[2:]
+    let vars = map(deepcopy(bindings), {_, x -> x[0]})
+    let vals = map(deepcopy(bindings), {_, x -> x[1]})
+    let lambda = extend(["lambda", vars], body)
+    return extend([lambda], vals)
 endfunction
 
 call s:RegisterTransformers([
-            \["let", funcref("s:LetToLambda")],
+            \["let", funcref("vltrns#LetToLambda")],
             \["cond", funcref("s:CondToIf")],
             \])

@@ -65,6 +65,7 @@ function! vl#Eval(expr, env=vlenv#BuildInitialEnv()) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let syntax = vlparse#Parse(tokens)
+    let syntax = vlparse#ToLisp(syntax)
     if type(syntax) == v:t_list
         let syntax = vltrns#Transform(syntax)
     endif

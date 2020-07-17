@@ -10,6 +10,8 @@ let s:D_QUOTE = '"'
 let s:BACKTICK = "`"
 let s:QUOTE = "'"
 let s:DOT = "."
+let s:LAMBDA = "lambda"
+let s:LET = "let"
 
 
 function! vlparse#Tokenize(expr) abort
@@ -20,21 +22,27 @@ function! vlparse#Parse(tokens) abort
     if len(a:tokens) == 0
         throw "unterminated expression"
     elseif a:tokens[0] == s:QUOTE
-        return vl#LispList(["quote", s:ParseQuoted(a:tokens[1:])])
+        return ["quote", s:ParseQuoted(a:tokens[1:])]
     elseif index(a:tokens, s:DOT) > -1
         throw "invalid syntax"
     elseif len(a:tokens) == 1
         return s:ParseAtom(a:tokens[0])
     elseif a:tokens[0] == s:L_PAREN
-        return vl#LispList(s:ParseList(a:tokens))
+        let expr = s:ParseList(a:tokens)
+        if len(expr) == 0
+            return expr
+        elseif type(expr[0]) != v:t_list && expr[0] == s:LET
+            let expr = vltrns#LetToLambda(expr)
+        endif
+        return expr
     elseif a:tokens[0] == s:D_QUOTE
-        return vl#LispList(s:ParseString(a:tokens))
+        return s:ParseString(a:tokens)
     endif
 endfunction
 
 function! s:ParseQuoted(tokens) abort
     if a:tokens[0] == s:L_PAREN && index(a:tokens, s:DOT) > 0
-        return s:ParsePair(a:tokens)
+        return extend(["pair"], s:ParsePair(a:tokens))
     else
         return vlparse#Parse(a:tokens)
     endif
@@ -83,7 +91,7 @@ function! s:ParsePair(tokens) abort
     endif
     let lhs = s:ParseQuoted(a:tokens[1:dotpos-1])
     let rhs = s:ParseQuoted(a:tokens[dotpos+1:-2])
-    return vl#Cons(lhs, rhs)
+    return [lhs, rhs]
 endfunction
 
 function! s:ParseString(tokens) abort
@@ -141,18 +149,32 @@ function! s:ParseAtom(token) abort
     endif
 endfunction
 
-function! s:DeepLispList(elts) abort
-    if vlutils#IsEmptyList(a:elts)
+function! vlparse#ToLisp(elts) abort
+    if type(a:elts) != v:t_list
+        return a:elts
+    elseif vlutils#IsEmptyList(a:elts)
         return []
     elseif len(a:elts) == 1
         if type(a:elts[0]) == v:t_list
-            return vl#Cons(s:DeepLispList(a:elts[0]), [])
+            return vl#Cons(vlparse#ToLisp(a:elts[0]), [])
         endif
         return add(a:elts, [])
     elseif type(a:elts[0]) == v:t_list
-        return vl#Cons(s:DeepLispList(a:elts[0]), s:DeepLispList(a:elts[1:]))
+        return vl#Cons(vlparse#ToLisp(a:elts[0]), vlparse#ToLisp(a:elts[1:]))
+    elseif a:elts[0] == "pair"
+        return s:PairsToLisp(a:elts)
     else
-        return vl#Cons(a:elts[0], s:DeepLispList(a:elts[1:]))
+        return vl#Cons(a:elts[0], vlparse#ToLisp(a:elts[1:]))
+    endif
+endfunction
+
+function! s:PairsToLisp(pair) abort
+    if vlutils#IsEmptyList(a:pair)
+        return a:pair
+    elseif a:pair[0] == "pair"
+        return [a:pair[1], s:PairsToLisp(a:pair[2])]
+    else
+        return vlparse#ToLisp(a:pair)
     endif
 endfunction
 

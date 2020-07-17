@@ -11,8 +11,6 @@ function! tests#vl#TestVimLisp() abort
         "echo e
     endfunction
 
-    call s:TestSubRefer()
-
     function! RunTests(tests) abort
         let [success, fail] = [0, 0]
         for [expected, actual] in a:tests
@@ -44,6 +42,10 @@ function! tests#vl#TestVimLisp() abort
     endfunction
 
     call RunEvalTests([
+                \[5, '(let ((x 3)) (let ((x 5)) x (+ 1 2) x))'],
+                \[4, '(begin 1 (+ 1 2) 4)'],
+                \[[1, 2], "'(1 . 2)"],
+                \[[1, [2, [3, []]]], "'(1 . (2 3))"],
                 \[[1, 2], '(cons 1 (call/cc (lambda (k) (k 2))))'],
                 \[["condition", [123, []]], '(raise 123)'],
                 \[[1, [2, []]], "'(1 . (2 . ()))"],
@@ -61,7 +63,6 @@ function! tests#vl#TestVimLisp() abort
                 \[12, '((lambda (x y) (+ x y)) 5 7)'],
                 \[1, '(define x "hello, world")'],
                 \[1, '(set! x 3)'],
-                \[4, '(begin 1 2 4)'],
                 \[3, '(begin (define x 3) x)'],
                 \[9, '((lambda () 5 7 9))'],
                 \[7, '(call/cc (lambda (k) 7))'],
@@ -72,7 +73,6 @@ function! tests#vl#TestVimLisp() abort
                 \[7, '(let ((x 3) (y 4)) (+ x y))'],
                 \[7, '((lambda (x y) (+ x y)) 3 4)'],
                 \[12, '(begin (define y (lambda (x) (+ 5 7))) (y 3))'],
-                \[5, '(let ((x 3)) (let ((x 5)) x))'],
                 \[17, '(begin (define x 7) (set! x 17) x)'],
                 \[120, '(if #t 120 121)'],
                 \[121, '(if #f 120 121)'],
@@ -108,8 +108,6 @@ function! tests#vl#TestVimLisp() abort
                 \['#t', "(equal? '(1 2) '(1 2))"],
                 \['#f', "(equal? '(1 2 3) '(1 2))"],
                 \['#t', "(begin (define l '(1 2)) (eq? l l))"],
-                \[[1, 2], "'(1 . 2)"],
-                \[[1, [2, [3, []]]], "'(1 . (2 3))"],
                 \])
                 "\[5, '(let ((x 0)) (while ((< x 5)) (set! x (+ x 1))) x)'],
                 "\[0, '(let ((x 0) (y 0)) (while ((< x 5)) (set! x (+ x 1))) y)'],
