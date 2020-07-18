@@ -163,6 +163,8 @@ function! vlparse#ToLisp(elts) abort
         return vl#Cons(vlparse#ToLisp(a:elts[0]), vlparse#ToLisp(a:elts[1:]))
     elseif a:elts[0] == "pair"
         return s:PairsToLisp(a:elts)
+    elseif a:elts[0] == "refer"
+        return a:elts
     else
         return vl#Cons(a:elts[0], vlparse#ToLisp(a:elts[1:]))
     endif

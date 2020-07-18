@@ -66,7 +66,7 @@ function! vltrns#ScanLambdas(expr, scope=[]) abort
         if type(e) == v:t_list
             call add(newexpr, vltrns#ScanLambdas(e, a:scope))
         elseif type(e) == v:t_string && e == s:LAMBDA
-            return add(newexpr, s:SubBoundVarRefs(a:expr, a:scope))
+            return extend(newexpr, s:SubBoundVarRefs(a:expr, a:scope))
         else
             call add(newexpr, e)
         endif

@@ -1,2 +1,2 @@
-(define current-handler (lambda () _current-handler))
-(define throw (lambda (exc) ((current-handler) exc)))
+;(define current-handler (lambda () _current-handler))
+;(define throw (lambda (exc) ((current-handler) exc)))

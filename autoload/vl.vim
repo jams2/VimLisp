@@ -65,8 +65,7 @@ function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let program = vlparse#Parse(tokens)
-    call vltrns#ScanLambdas(program)
-    echo program
+    let program = vltrns#ScanLambdas(program)
     let program = vlparse#ToLisp(program)
     let s:EXPR_R = program
     call add(s:K_STACK, funcref("s:EndCont"))
@@ -103,6 +102,8 @@ function! vl#Analyze() abort
         return s:GenLookup(expr)
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
+    elseif expr[0] == "refer"
+        return s:GenLambdaLookup(expr)
     elseif expr[0] == "raise"
         return s:GenRaise(expr)
     elseif expr[0] == "vlobj"
@@ -151,9 +152,18 @@ function! s:GenConst(expr) abort
 endfunction
 
 function! s:GenLookup(expr) abort
-    let fname = s:GenLabel("Closure")
+    let fname = s:GenLabel("Lookup")
     function! {fname}() closure abort
         call add(s:KVAL_STACK, s:ApplyEnv(s:ENV_R, a:expr))
+        return s:ApplyK()
+    endfunction
+    return funcref(fname)
+endfunction
+
+function! s:GenLambdaLookup(expr) abort
+    let fname = s:GenLabel("LambdaLookup")
+    function! {fname}() closure abort
+        call add(s:KVAL_STACK, s:ApplyLambdaEnv(s:ENV_R, a:expr[1]))
         return s:ApplyK()
     endfunction
     return funcref(fname)
@@ -235,7 +245,7 @@ function! s:ApplyProc() abort
         let fname = s:GenLabel("ProcBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            let s:ENV_R = vl#ExtendEnv(env, params, rands)
+            let s:ENV_R = vl#ExtendEnv(env, rands)
             return s:EvalClosure()
         endfunction
         return funcref(fname)
@@ -247,7 +257,7 @@ function! s:ApplyProc() abort
         let fname = s:GenLabel("ContBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            let s:ENV_R = vl#ExtendEnv(env, params, rands)
+            let s:ENV_R = vl#ExtendEnv(env, rands)
             return s:EvalClosure()
         endfunction
         return funcref(fname)
@@ -315,30 +325,29 @@ function! s:DeepLispMap(proc, l) abort
 endfunction
 
 function! s:ApplyEnv(env, var) abort
-    " The top level env is a dict. Extended envs for procedure
-    " application are a list of values.
-    let e = a:env
-    while type(e) != v:t_dict
-        for j in range(len(e[0][0]))
-            if e[0][0][j] == a:var
-                return e[0][1][j]
-            endif
-        endfor
-        let e = e[1]
-    endwhile
-    if has_key(e, a:var)
-        return e[a:var]
+    " The top level env is a dict.
+    if has_key(a:env[-1], a:var)
+        return a:env[-1][a:var]
     endif
     throw "Unbound variable: "..a:var
 endfunction
 
-function! vl#ExtendEnv(env, vars, vals) abort
-    return [[a:vars, a:vals], a:env]
+function! s:ApplyLambdaEnv(env, reference) abort
+    " References for bound variables will be a list with two
+    " elements: the first being an index for the correct frame
+    " in the env (0 being the innermost - most recently added),
+    " the second element being the index in the frame which
+    " is the value for the variable in question.
+    return a:env[a:reference[0]][a:reference[1]]
+endfunction
+
+function! vl#ExtendEnv(env, vals) abort
+    return extend([a:vals], a:env)
 endfunction
 
 function! s:SetVar(env, var, val) abort
     let e = a:env
-    while type(e) != v:t_dict
+    while type(e[0]) != v:t_dict
         for j in range(len(e[0][0]))
             if e[0][0][j] == a:var
                 let e[0][1][j] = a:val
@@ -347,18 +356,19 @@ function! s:SetVar(env, var, val) abort
         endfor
         let e = e[1]
     endwhile
-    if has_key(e, var)
-        let e[var] = val
+    if has_key(e[0], a:var)
+        let e[0][a:var] = a:val
+        return 1
     endif
     throw "Unbound variable: "..a:var
 endfunction
 
 function! s:DefineVar(env, var, val) abort
-    if type(a:env) == v:t_list
+    if type(a:env[0]) == v:t_list
         let a:env[0][0] = add(a:env[0][0], a:var)
         let a:env[0][1] = add(a:env[0][1], a:val)
     else
-        let a:env[a:var] = a:val
+        let a:env[0][a:var] = a:val
     endif
     return 1
 endfunction

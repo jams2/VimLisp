@@ -1,5 +1,5 @@
 function! vlenv#BuildInitialEnv() abort
-    return {
+    return [{
                 \'+': ['prim', {args -> vlbuiltins#ApplyGeneric('add2', args)}],
                 \'-': ['prim', {args -> vlbuiltins#ApplyGeneric('sub2', args)}],
                 \'*': ['prim', {args -> vlbuiltins#ApplyGeneric('mult2', args)}],
@@ -15,5 +15,5 @@ function! vlenv#BuildInitialEnv() abort
                 \'eq?': ['prim', {args -> vlbuiltins#ApplyGeneric('eq?', args)}],
                 \'#t': g:vl_bool_t,
                 \'#f': g:vl_bool_f,
-                \}
+                \}]
 endfunction
