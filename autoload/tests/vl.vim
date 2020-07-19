@@ -31,7 +31,7 @@ function! tests#vl#TestVimLisp() abort
         for [expected, expr] in a:tests
             let actual = TestVlEval(expr)
             if string(expected) == string(actual)
-                "echo "[+] "..string(expr)
+                echo "[+] "..string(expr)
                 let success += 1
             else
                 echo "[!] "..string(actual).."\t\t: "..expr
@@ -43,10 +43,12 @@ function! tests#vl#TestVimLisp() abort
     endfunction
 
     call RunEvalTests([
+                \[12, '((lambda (y) (define x 12) x) "y")'],
+                \[12, '((lambda (y) (set! y 12) y) 11)'],
+                \[5, '(let ((x 3)) (let ((x 5)) x (+ 1 2) x))'],
                 \[12, '((lambda (x) x) 12)'],
                 \[12, '((lambda (x y) (+ x y)) 5 7)'],
                 \[5, '((lambda (x) ((lambda (y) y x x) x)) 5)'],
-                \[5, '(let ((x 3)) (let ((x 5)) x (+ 1 2) x))'],
                 \[4, '(begin 1 (+ 1 2) 4)'],
                 \[[1, 2], "'(1 . 2)"],
                 \[[1, [2, [3, []]]], "'(1 . (2 3))"],

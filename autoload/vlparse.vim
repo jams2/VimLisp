@@ -42,7 +42,7 @@ endfunction
 
 function! s:ParseQuoted(tokens) abort
     if a:tokens[0] == s:L_PAREN && index(a:tokens, s:DOT) > 0
-        return extend(["pair"], s:ParsePair(a:tokens))
+        return extend(["#pair"], s:ParsePair(a:tokens))
     else
         return vlparse#Parse(a:tokens)
     endif
@@ -161,9 +161,9 @@ function! vlparse#ToLisp(elts) abort
         return add(a:elts, [])
     elseif type(a:elts[0]) == v:t_list
         return vl#Cons(vlparse#ToLisp(a:elts[0]), vlparse#ToLisp(a:elts[1:]))
-    elseif a:elts[0] == "pair"
+    elseif a:elts[0] == "#pair"
         return s:PairsToLisp(a:elts)
-    elseif a:elts[0] == "refer"
+    elseif a:elts[0] == "#refer"
         return a:elts
     else
         return vl#Cons(a:elts[0], vlparse#ToLisp(a:elts[1:]))
@@ -173,7 +173,7 @@ endfunction
 function! s:PairsToLisp(pair) abort
     if vlutils#IsEmptyList(a:pair)
         return a:pair
-    elseif a:pair[0] == "pair"
+    elseif a:pair[0] == "#pair"
         return [a:pair[1], s:PairsToLisp(a:pair[2])]
     else
         return vlparse#ToLisp(a:pair)
