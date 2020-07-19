@@ -61,13 +61,15 @@ function! s:EvalClosure() abort
     return s:CLOSURE_R()
 endfunction
 
-function! vl#Eval(expr, env=vlenv#BuildInitialEnv()) abort
+function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
-    let syntax = vlparse#Parse(tokens)
+    let program = vlparse#Parse(tokens)
+    let program = vltrns#ScanLambdas(program)
+    let program = vlparse#ToLisp(program)
+    let s:EXPR_R = program
     call add(s:K_STACK, funcref("s:EndCont"))
     call s:PushHandler(funcref("vl#TopLevelHandler"))
-    let s:EXPR_R = syntax
     let s:CLOSURE_R = vl#Analyze()
     let s:ENV_R = a:env
     let Bounce = s:EvalClosure()
@@ -92,15 +94,20 @@ function! vl#TypeOf(obj) abort
 endfunction
 
 function! vl#Analyze() abort
-    let expr = vltrns#Transform(s:EXPR_R)
-    "let expr = vltrns#SubReferences(expr)
     let s:COUNTER += 1
+    let expr = vltrns#Desugar(s:EXPR_R)
     if type(expr) == v:t_number
         return s:GenConst(expr)
     elseif type(expr) == v:t_string
         return s:GenLookup(expr)
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
+    elseif expr[0] == "#refer"
+        return s:GenLambdaLookup(expr)
+    elseif expr[0] == "#defvar"
+        return s:GenLambdaDefVar(expr)
+    elseif expr[0] == "#setbang"
+        return s:GenLambdaSetBang(expr)
     elseif expr[0] == "raise"
         return s:GenRaise(expr)
     elseif expr[0] == "vlobj"
@@ -149,10 +156,57 @@ function! s:GenConst(expr) abort
 endfunction
 
 function! s:GenLookup(expr) abort
-    let fname = s:GenLabel("Closure")
+    let fname = s:GenLabel("Lookup")
     function! {fname}() closure abort
         call add(s:KVAL_STACK, s:ApplyEnv(s:ENV_R, a:expr))
         return s:ApplyK()
+    endfunction
+    return funcref(fname)
+endfunction
+
+function! s:GenLambdaLookup(expr) abort
+    let fname = s:GenLabel("LambdaLookup")
+    function! {fname}() closure abort
+        call add(s:KVAL_STACK, s:ApplyLambdaEnv(s:ENV_R, a:expr[1]))
+        return s:ApplyK()
+    endfunction
+    return funcref(fname)
+endfunction
+
+function! s:GenLambdaDefVar(expr) abort
+    let s:EXPR_R = vl#Caddr(a:expr)
+    let ValClosure = vl#Analyze()
+    let contname = s:GenLabel("LambdaDefVarCont")
+    let fname = s:GenLabel("LambdaDefVar")
+    function! {fname}() closure abort
+        function! {contname}(val) closure abort
+            " Push the new value onto the front of innermost frame.
+            let s:ENV_R[0] = extend([a:val], s:ENV_R[0])
+            call add(s:KVAL_STACK, 1)
+            return s:ApplyK()
+        endfunction
+        let s:CLOSURE_R = ValClosure
+        call add(s:K_STACK, funcref(contname))
+        return s:EvalClosure()
+    endfunction
+    return funcref(fname)
+endfunction
+
+function! s:GenLambdaSetBang(expr) abort
+    let s:EXPR_R = vl#Caddr(a:expr)
+    let ValClosure = vl#Analyze()
+    let ref = a:expr[1][0][1]
+    let contname = s:GenLabel("LambdaSetBangCont")
+    let fname = s:GenLabel("LambdaSetBang")
+    function! {fname}() closure abort
+        function! {contname}(val) closure abort
+            let s:ENV_R[ref[0]][ref[1]] = a:val
+            call add(s:KVAL_STACK, 1)
+            return s:ApplyK()
+        endfunction
+        let s:CLOSURE_R = ValClosure
+        call add(s:K_STACK, funcref(contname))
+        return s:EvalClosure()
     endfunction
     return funcref(fname)
 endfunction
@@ -163,14 +217,16 @@ function! s:Sequentially(closures) abort
     " expression becomes the value of the sequence.
     " We therefore need to push an 'empty' continuation
     " for each of the first n-1 expressions.
+    " Evaluating a procedure application returns a bounce,
+    " so we need to trampoline the evaluation of each closure.
     let fname = s:GenLabel("SequenceClosure")
     let closures = a:closures
     function! {fname}() closure abort
-        let K = {_ -> 0}
+        let K = {_ -> "done"}
         while vl#Cdr(closures) != []
             call add(s:K_STACK, K)
             let s:CLOSURE_R = closures[0]
-            call s:EvalClosure()
+            call s:Trampoline(s:EvalClosure())
             let closures = closures[1]
         endwhile
         let s:CLOSURE_R = closures[0]
@@ -224,26 +280,26 @@ function! s:ApplyProc() abort
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^proc$'
-        let Body = s:ProcBody(rator)
+        let Body = vl#ProcBody(rator)
         let env = s:ProcEnv(rator)
-        let params = vlutils#FlattenList(s:ProcParams(rator))
+        let params = vlutils#FlattenList(vl#ProcParams(rator))
         let rands = vlutils#FlattenList(rands)
         let fname = s:GenLabel("ProcBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            let s:ENV_R = vl#ExtendEnv(env, params, rands)
+            let s:ENV_R = vl#ExtendEnv(env, rands)
             return s:EvalClosure()
         endfunction
         return funcref(fname)
     elseif vl#Car(rator) =~? '^cont$'
-        let Body = s:ProcBody(rator)
+        let Body = vl#ProcBody(rator)
         let env = s:ProcEnv(rator)
-        let params = vlutils#FlattenList(s:ProcParams(rator))
+        let params = vlutils#FlattenList(vl#ProcParams(rator))
         let rands = [extend(["cont-prim"], vlutils#FlattenList(rands))]
         let fname = s:GenLabel("ContBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
-            let s:ENV_R = vl#ExtendEnv(env, params, rands)
+            let s:ENV_R = vl#ExtendEnv(env, rands)
             return s:EvalClosure()
         endfunction
         return funcref(fname)
@@ -311,25 +367,29 @@ function! s:DeepLispMap(proc, l) abort
 endfunction
 
 function! s:ApplyEnv(env, var) abort
-    let e = a:env
-    while e != []
-        for j in range(len(e[0][0]))
-            if e[0][0][j] == a:var
-                return e[0][1][j]
-            endif
-        endfor
-        let e = e[1]
-    endwhile
+    " The top level env is a dict.
+    if has_key(a:env[-1], a:var)
+        return a:env[-1][a:var]
+    endif
     throw "Unbound variable: "..a:var
 endfunction
 
-function! vl#ExtendEnv(env, vars, vals) abort
-    return [[a:vars, a:vals], a:env]
+function! s:ApplyLambdaEnv(env, reference) abort
+    " References for bound variables will be a list with two
+    " elements: the first being an index for the correct frame
+    " in the env (0 being the innermost - most recently added),
+    " the second element being the index in the frame which
+    " is the value for the variable in question.
+    return a:env[a:reference[0]][a:reference[1]]
+endfunction
+
+function! vl#ExtendEnv(env, vals) abort
+    return extend([a:vals], a:env)
 endfunction
 
 function! s:SetVar(env, var, val) abort
     let e = a:env
-    while e != []
+    while type(e[0]) != v:t_dict
         for j in range(len(e[0][0]))
             if e[0][0][j] == a:var
                 let e[0][1][j] = a:val
@@ -338,13 +398,11 @@ function! s:SetVar(env, var, val) abort
         endfor
         let e = e[1]
     endwhile
+    if has_key(e[0], a:var)
+        let e[0][a:var] = a:val
+        return 1
+    endif
     throw "Unbound variable: "..a:var
-endfunction
-
-function! s:DefineVar(env, var, val) abort
-    let a:env[0][0] = add(a:env[0][0], a:var)
-    let a:env[0][1] = add(a:env[0][1], a:val)
-    return 1
 endfunction
 
 function! s:MapAnalyze(expr) abort
@@ -357,7 +415,7 @@ function! s:GenSequence(expr, sequencer) abort
     return a:sequencer(closures)
 endfunction
 
-function! s:ProcParams(proc) abort
+function! vl#ProcParams(proc) abort
     return vl#Cadr(a:proc)
 endfunction
 
@@ -365,7 +423,7 @@ function! s:ProcEnv(proc) abort
     return vl#Cadddr(a:proc)
 endfunction
 
-function! s:ProcBody(proc) abort
+function! vl#ProcBody(proc) abort
     return vl#Caddr(a:proc)
 endfunction
 
@@ -428,11 +486,14 @@ endfunction
 function! s:GenDefine(expr) abort
     let s:EXPR_R = vl#Caddr(a:expr)
     let ValClosure = vl#Analyze()
+    let var = vl#Cadr(a:expr)
     let contname = s:GenLabel("DefineCont")
     let fname = s:GenLabel("DefineClosure")
     function! {fname}() closure abort
         function! {contname}(val) closure abort
-            call add(s:KVAL_STACK, s:DefineVar(s:ENV_R, vl#Cadr(a:expr), a:val))
+            " Define in top-level environment (dict).
+            let s:ENV_R[-1][var] = a:val
+            call add(s:KVAL_STACK, 1)
             return s:ApplyK()
         endfunction
         let s:CLOSURE_R = ValClosure
