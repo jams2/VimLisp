@@ -106,6 +106,8 @@ function! vl#Analyze() abort
         return s:GenLambdaLookup(expr)
     elseif expr[0] == "#defvar"
         return s:GenLambdaDefVar(expr)
+    elseif expr[0] == "#setbang"
+        return s:GenLambdaSetBang(expr)
     elseif expr[0] == "raise"
         return s:GenRaise(expr)
     elseif expr[0] == "vlobj"
@@ -178,7 +180,28 @@ function! s:GenLambdaDefVar(expr) abort
     let fname = s:GenLabel("LambdaDefVar")
     function! {fname}() closure abort
         function! {contname}(val) closure abort
-            call add(s:KVAL_STACK, s:LambdaDefineVar(s:ENV_R, a:val))
+            " Push the new value onto the front of innermost frame.
+            let s:ENV_R[0] = extend([a:val], s:ENV_R[0])
+            call add(s:KVAL_STACK, 1)
+            return s:ApplyK()
+        endfunction
+        let s:CLOSURE_R = ValClosure
+        call add(s:K_STACK, funcref(contname))
+        return s:EvalClosure()
+    endfunction
+    return funcref(fname)
+endfunction
+
+function! s:GenLambdaSetBang(expr) abort
+    let s:EXPR_R = vl#Caddr(a:expr)
+    let ValClosure = vl#Analyze()
+    let ref = a:expr[1][0][1]
+    let contname = s:GenLabel("LambdaSetBangCont")
+    let fname = s:GenLabel("LambdaSetBang")
+    function! {fname}() closure abort
+        function! {contname}(val) closure abort
+            let s:ENV_R[ref[0]][ref[1]] = a:val
+            call add(s:KVAL_STACK, 1)
             return s:ApplyK()
         endfunction
         let s:CLOSURE_R = ValClosure
@@ -382,19 +405,6 @@ function! s:SetVar(env, var, val) abort
     throw "Unbound variable: "..a:var
 endfunction
 
-function! s:LambdaDefineVar(env, val) abort
-    " lambda env - list of lists of values. Push the new
-    " val onto the front of the innermost frame.
-    let a:env[0] = extend([a:val], a:env[0])
-    return 1
-endfunction
-
-function! s:DefineVar(env, var, val) abort
-    " top level env - dict.
-    let a:env[-1][a:var] = a:val
-    return 1
-endfunction
-
 function! s:MapAnalyze(expr) abort
     let s:EXPR_R = a:expr
     return vl#Analyze()
@@ -476,11 +486,14 @@ endfunction
 function! s:GenDefine(expr) abort
     let s:EXPR_R = vl#Caddr(a:expr)
     let ValClosure = vl#Analyze()
+    let var = vl#Cadr(a:expr)
     let contname = s:GenLabel("DefineCont")
     let fname = s:GenLabel("DefineClosure")
     function! {fname}() closure abort
         function! {contname}(val) closure abort
-            call add(s:KVAL_STACK, s:DefineVar(s:ENV_R, vl#Cadr(a:expr), a:val))
+            " Define in top-level environment (dict).
+            let s:ENV_R[-1][var] = a:val
+            call add(s:KVAL_STACK, 1)
             return s:ApplyK()
         endfunction
         let s:CLOSURE_R = ValClosure

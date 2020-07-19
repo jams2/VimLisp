@@ -41,7 +41,7 @@ function! s:SubLambdaBodyRefs(body, scope) abort
     " values onto the front of the list of frames. We can then
     " provide an index pair of [frame-index, value-index] in place
     " of every variable reference inside a lambda body.
-    " See Dybvig '87, "Three Implementation Models for Scheme.
+    " See Dybvig '87, 'Three Implementation Models for Scheme'.
     " Definitions inside a lambda body must be before any other 
     " expressions. When encountered, the new var is pushed onto the
     " front of the list of vars for the current lexical scope, so
@@ -72,6 +72,8 @@ function! s:SubLambdaBodyRefs(body, scope) abort
                     throw "define in invalid body position"
                 elseif expr[0] == s:SETBANG
                     call add(newbody, s:NestedDefineSetVar(expr, scope))
+                else  " procedure application
+                    call add(newbody, s:SubLambdaBodyRefs(expr, scope))
                 endif
             else
                 call add(newbody, s:SubLambdaBodyRefs(expr, scope))
@@ -109,7 +111,7 @@ function! s:NestedDefineSetVar(expr, scope) abort
         " level environment.
         return add(a:expr[:1], val)
     else
-        return ["#setvar", envref, val]
+        return ["#setbang", envref, val]
     endif
 endfunction
 
