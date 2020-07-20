@@ -114,8 +114,6 @@ function! vl#Analyze() abort
         return s:GenCond(expr)
     elseif expr[0] == "and"
         return s:GenAnd(expr)
-    elseif expr[0] == "while"
-        return s:GenWhile(expr)
     elseif expr[0] == "begin"
         return s:GenSequence(vl#Cdr(expr), funcref("s:Sequentially"))
     elseif expr[0] == "define"
@@ -260,7 +258,10 @@ function! s:ApplyProc() abort
     elseif vl#Car(rator) =~? '^cont-prim$'
         let fname = s:GenLabel("ApplyContPrim")
         function! {fname}() closure abort
-            call add(s:KVAL_STACK, vl#Car(rands))
+            while s:K_STACK[-1] != rator[1]
+                call remove(s:K_STACK, -1)
+            endwhile
+            call add(s:KVAL_STACK, rands[0])
             return s:ApplyK()
         endfunction
         return funcref(fname)
@@ -280,7 +281,8 @@ function! s:ApplyProc() abort
         let Body = vl#ProcBody(rator)
         let env = s:ProcEnv(rator)
         let params = vlutils#FlattenList(vl#ProcParams(rator))
-        let rands = [extend(["cont-prim"], vlutils#FlattenList(rands))]
+        let K = s:K_STACK[-1]
+        let rands = [["cont-prim", K]]
         let fname = s:GenLabel("ContBounce")
         function! {fname}() closure abort
             let s:CLOSURE_R = Body
@@ -420,10 +422,10 @@ function! s:EvalClosureList() abort
         return s:ApplyK()
     endif
     let outercontname = s:GenLabel("EvalClosureListOuterCont")
-    let innercontname = s:GenLabel("EvalClosureListInnerCont")
     function! {outercontname}(arg) closure abort
+        let innercontname = s:GenLabel("EvalClosureListInnerCont")
         function! {innercontname}(args) closure abort
-            call add(s:KVAL_STACK, vl#Cons(a:arg, a:args))
+            call add(s:KVAL_STACK, [a:arg, a:args])
             return s:ApplyK()
         endfunction
         let s:CLOSURE_LIST_R = vl#Cdr(closures)
