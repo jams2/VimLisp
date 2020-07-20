@@ -5,9 +5,9 @@ let g:vl_t_void = "t_void"
 let g:vl_t_err = "t_err"
 let g:vl_bool_t = "#t"
 let g:vl_bool_f = "#f"
-let g:VL_INITIAL_ENV = vlenv#BuildInitialEnv()
 let s:D_QUOTE = 34
 let s:SEMICOLON = 59
+call vlenv#BuildInitialEnv()
 
 function! VlEvalCommand(expr) abort
     try

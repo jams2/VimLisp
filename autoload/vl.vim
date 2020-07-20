@@ -61,11 +61,11 @@ function! s:EvalClosure() abort
     return s:CLOSURE_R()
 endfunction
 
-function! vl#Eval(expr, env=g:VL_INITIAL_ENV) abort
+function! vl#Eval(expr, env=g:VL_INIT_ENV_VALS) abort
     call s:InitRegisters()
     let tokens = vlparse#Tokenize(a:expr)
     let program = vlparse#Parse(tokens)
-    let program = vltrns#ScanLambdas(program)
+    let program = vltrns#AnnotateVarReferences(program)
     let program = vlparse#ToLisp(program)
     let s:EXPR_R = program
     call add(s:K_STACK, funcref("s:EndCont"))
@@ -98,16 +98,10 @@ function! vl#Analyze() abort
     let expr = vltrns#Desugar(s:EXPR_R)
     if type(expr) == v:t_number
         return s:GenConst(expr)
-    elseif type(expr) == v:t_string
-        return s:GenLookup(expr)
     elseif type(expr[0]) == v:t_list
         return s:GenApplication(expr)
     elseif expr[0] == "#refer"
-        return s:GenLambdaLookup(expr)
-    elseif expr[0] == "#defvar"
-        return s:GenLambdaDefVar(expr)
-    elseif expr[0] == "#setbang"
-        return s:GenLambdaSetBang(expr)
+        return s:GenLookup(expr)
     elseif expr[0] == "raise"
         return s:GenRaise(expr)
     elseif expr[0] == "vlobj"
@@ -125,9 +119,9 @@ function! vl#Analyze() abort
     elseif expr[0] == "begin"
         return s:GenSequence(vl#Cdr(expr), funcref("s:Sequentially"))
     elseif expr[0] == "define"
-        return s:GenDefine(expr)
+        return s:GenDefVar(expr)
     elseif expr[0] == "set!"
-        return s:GenSetBang(expr)
+        return s:GenSetVar(expr)
     elseif expr[0] == "call/cc"
         return s:GenCallCC(expr)
     elseif type(expr) == v:t_list
@@ -156,15 +150,6 @@ function! s:GenConst(expr) abort
 endfunction
 
 function! s:GenLookup(expr) abort
-    let fname = s:GenLabel("Lookup")
-    function! {fname}() closure abort
-        call add(s:KVAL_STACK, s:ApplyEnv(s:ENV_R, a:expr))
-        return s:ApplyK()
-    endfunction
-    return funcref(fname)
-endfunction
-
-function! s:GenLambdaLookup(expr) abort
     let fname = s:GenLabel("LambdaLookup")
     function! {fname}() closure abort
         call add(s:KVAL_STACK, s:ApplyLambdaEnv(s:ENV_R, a:expr[1]))
@@ -173,7 +158,7 @@ function! s:GenLambdaLookup(expr) abort
     return funcref(fname)
 endfunction
 
-function! s:GenLambdaDefVar(expr) abort
+function! s:GenDefVar(expr) abort
     let s:EXPR_R = vl#Caddr(a:expr)
     let ValClosure = vl#Analyze()
     let contname = s:GenLabel("LambdaDefVarCont")
@@ -192,7 +177,7 @@ function! s:GenLambdaDefVar(expr) abort
     return funcref(fname)
 endfunction
 
-function! s:GenLambdaSetBang(expr) abort
+function! s:GenSetVar(expr) abort
     let s:EXPR_R = vl#Caddr(a:expr)
     let ValClosure = vl#Analyze()
     let ref = a:expr[1][0][1]
@@ -483,26 +468,6 @@ function! s:GenApplication(expr) abort
     return funcref(fname)
 endfunction
 
-function! s:GenDefine(expr) abort
-    let s:EXPR_R = vl#Caddr(a:expr)
-    let ValClosure = vl#Analyze()
-    let var = vl#Cadr(a:expr)
-    let contname = s:GenLabel("DefineCont")
-    let fname = s:GenLabel("DefineClosure")
-    function! {fname}() closure abort
-        function! {contname}(val) closure abort
-            " Define in top-level environment (dict).
-            let s:ENV_R[-1][var] = a:val
-            call add(s:KVAL_STACK, 1)
-            return s:ApplyK()
-        endfunction
-        let s:CLOSURE_R = ValClosure
-        call add(s:K_STACK, funcref(contname))
-        return s:EvalClosure()
-    endfunction
-    return funcref(fname)
-endfunction
-
 function! s:AnalyzeCallCCProc() abort
     let expr = s:EXPR_R
     let params = vl#Cadr(expr)
@@ -581,23 +546,6 @@ function! s:GenCond(expr) abort
             endif
         endfunction
         let s:CLOSURE_R = P_clsr
-        call add(s:K_STACK, funcref(contname))
-        return s:EvalClosure()
-    endfunction
-    return funcref(fname)
-endfunction
-
-function! s:GenSetBang(expr) abort
-    let s:EXPR_R = vl#Caddr(a:expr)
-    let ValClosure = vl#Analyze()
-    let contname = s:GenLabel("SetBangCont")
-    let fname = s:GenLabel("SetBangClosure")
-    function! {fname}() closure abort
-        function! {contname}(val) closure abort
-            call add(s:KVAL_STACK, s:SetVar(s:ENV_R, vl#Cadr(a:expr), a:val))
-            return s:ApplyK()
-        endfunction
-        let s:CLOSURE_R = ValClosure
         call add(s:K_STACK, funcref(contname))
         return s:EvalClosure()
     endfunction

@@ -56,8 +56,10 @@ function! s:SubLambdaBodyRefs(body, scope) abort
             " Add the var to be defined to the front of the current frame.
             " Any binding over a function parameter will then be shadowed
             " by the new definition.
-            let scope[0] = extend(a:body[i][1:1], scope[0])
-            call add(newbody, s:NestedDefineAddVar(a:body[i], scope))
+            " Duplicated here from AnnotateVarReferences to enforce define
+            " expressions inside a lambda body come before expressions of
+            " other types.
+            call add(newbody, s:ProcessDefVar(a:body[i], scope))
             let i += 1
         else
             break
@@ -97,13 +99,18 @@ function! s:GetLambdaEnvRef(expr, scope) abort
     return a:expr
 endfunction
 
+function! s:ProcessDefVar(expr, scope) abort
+    let a:scope[0] = extend([a:expr[1]], a:scope[0])
+    return s:NestedDefineAddVar(a:expr, a:scope)
+endfunction
+
 function! s:NestedDefineAddVar(expr, scope) abort
-    let val = vltrns#ScanLambdas(a:expr[2], a:scope)
-    return ["#defvar", a:expr[1], val]
+    let val = vltrns#AnnotateVarReferences(a:expr[2], a:scope)
+    return ["define", a:expr[1], val]
 endfunction
 
 function! s:NestedDefineSetVar(expr, scope) abort
-    let val = vltrns#ScanLambdas(a:expr[2], a:scope)
+    let val = vltrns#AnnotateVarReferences(a:expr[2], a:scope)
     let envref = s:GetLambdaEnvRef(a:expr[1], a:scope)
     if type(envref) == v:t_string
         " var not found in lambda scope. Return a set!,
@@ -111,20 +118,31 @@ function! s:NestedDefineSetVar(expr, scope) abort
         " level environment.
         return add(a:expr[:1], val)
     else
-        return ["#setbang", envref, val]
+        return ["set!", envref, val]
     endif
 endfunction
 
-function! vltrns#ScanLambdas(expr, scope=[]) abort
-    if type(a:expr) != v:t_list || a:expr == []
+function! vltrns#AnnotateVarReferences(expr, scope=g:VL_INIT_ENV_VARS) abort
+    if type(a:expr) == v:t_string
+        " top level variable reference
+        return s:GetLambdaEnvRef(a:expr, a:scope)
+    elseif type(a:expr) != v:t_list || a:expr == []
         return a:expr
     endif
     let newexpr = []
     for e in a:expr
         if type(e) == v:t_list
-            call add(newexpr, vltrns#ScanLambdas(e, a:scope))
-        elseif type(e) == v:t_string && e == s:LAMBDA
-            return extend(newexpr, s:ProcessLambda(a:expr, a:scope))
+            call add(newexpr, vltrns#AnnotateVarReferences(e, a:scope))
+        elseif type(e) == v:t_string
+            if e == s:LAMBDA
+                return extend(newexpr, s:ProcessLambda(a:expr, a:scope))
+            elseif e == s:DEFINE
+                return extend(newexpr, s:ProcessDefVar(a:expr, a:scope))
+            elseif e == s:SETBANG
+                return extend(newexpr, s:NestedDefineSetVar(a:expr, a:scope))
+            else
+                call add(newexpr, s:GetLambdaEnvRef(e, a:scope))
+            endif
         else
             call add(newexpr, e)
         endif
@@ -143,7 +161,7 @@ function! s:TransformCond(clauses) abort
     endif
     let first = vl#Car(a:clauses)
     let rest = vl#Cdr(a:clauses)
-    if vl#Car(first) =~? '^else$'
+    if type(vl#Car(first)) == v:t_string && vl#Car(first) =~? '^else$'
         if !vlutils#IsEmptyList(rest)
             throw "Invalid cond expression: else clause must be last"
         endif

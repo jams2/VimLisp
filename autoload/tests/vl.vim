@@ -1,14 +1,14 @@
 function! tests#vl#TestVimLisp() abort
     function! TestVlEval(expr) abort
-        let testenv = vlenv#BuildInitialEnv()
-        let testenv[0]["x"] = 3
-        return vl#Eval(a:expr, testenv)
+        call vlenv#BuildInitialEnv()
+        call vlenv#ExtendInitialEnv("x", 3)
+        return vl#Eval(a:expr)
     endfunction
 
     function! s:TestSubRefer() abort
         let e = "(lambda (x y) ((lambda (z) (x y z))))"
         let e = vlparse#Parse(vlparse#Tokenize(e))
-        call vltrns#ScanLambdas(e)
+        call vltrns#AnnotateVarReferences(e)
         "echo e
     endfunction
 
@@ -43,17 +43,13 @@ function! tests#vl#TestVimLisp() abort
     endfunction
 
     call RunEvalTests([
-                \[5, '(let ((x 3)) (let ((x 5)) x (+ 1 2) x))'],
-                \[12, '((lambda (y) (define x 12) x) "y")'],
-                \[12, '((lambda (y) (set! y 12) y) 11)'],
-                \[12, '((lambda (x) x) 12)'],
-                \[12, '((lambda (x y) (+ x y)) 5 7)'],
-                \[5, '((lambda (x) ((lambda (y) y x x) x)) 5)'],
-                \[4, '(begin 1 (+ 1 2) 4)'],
+                \["x", "'x"],
+                \[17, '(cond (#f 11) (#f 13) (else 17))'],
+                \[12, '(begin (define y (lambda (x) (+ 5 7))) (y 3))'],
+                \[1, '(set! x 3)'],
+                \[3, '(+ 1 (+ 1 1))'],
                 \[[1, 2], "'(1 . 2)"],
                 \[[1, [2, [3, []]]], "'(1 . (2 3))"],
-                \[[1, 2], '(cons 1 (call/cc (lambda (k) (k 2))))'],
-                \[["condition", [123, []]], '(raise 123)'],
                 \[[1, [2, []]], "'(1 . (2 . ()))"],
                 \[[1, []], "'(1 . ())"],
                 \[[], "'()"],
@@ -61,30 +57,34 @@ function! tests#vl#TestVimLisp() abort
                 \[123, 123],
                 \[3, 'x'],
                 \[3, '(- 5 2)'],
-                \[3, '(+ 1 (+ 1 1))'],
                 \[10, '(* 5 2)'],
                 \[3, '(/ 12 4)'],
                 \[3, '(+ 1 2)'],
                 \[1, "(define x 3)"],
                 \[1, '(define x "hello, world")'],
-                \[1, '(set! x 3)'],
                 \[3, '(begin (define x 3) x)'],
+                \[5, '(let ((x 3)) (let ((x 5)) x (+ 1 2) x))'],
+                \[12, '((lambda (y) (define x 12) x) "y")'],
+                \[12, '((lambda (y) (set! y 12) y) 11)'],
+                \[12, '((lambda (x) x) 12)'],
+                \[12, '((lambda (x y) (+ x y)) 5 7)'],
+                \[5, '((lambda (x) ((lambda (y) y x x) x)) 5)'],
+                \[4, '(begin 1 (+ 1 2) 4)'],
                 \[9, '((lambda () 5 7 9))'],
                 \[7, '(call/cc (lambda (k) 7))'],
                 \[7, '(call/cc (lambda (k) (k 7)))'],
+                \[[1, 2], '(cons 1 (call/cc (lambda (k) (k 2))))'],
+                \[["condition", [123, []]], '(raise 123)'],
                 \[-2, '(+ 1 (call/cc (lambda (k) (k -3))))'],
                 \[1, '(+ 1 (call/cc (lambda (k) 0)))'],
                 \[4, '(+ 1 (call/cc (lambda (k) (k 3))))'],
                 \[7, '(let ((x 3) (y 4)) (+ x y))'],
                 \[7, '((lambda (x y) (+ x y)) 3 4)'],
-                \[12, '(begin (define y (lambda (x) (+ 5 7))) (y 3))'],
                 \[17, '(begin (define x 7) (set! x 17) x)'],
                 \[120, '(if #t 120 121)'],
                 \[121, '(if #f 120 121)'],
                 \[11, '(cond (else 11))'],
-                \[17, '(cond (#f 11) (#f 13) (else 17))'],
                 \[17, '(cond (#f 11) (else (define x 7) (set! x 17) x))'],
-                \["x", "'x"],
                 \[[1, [2, [3, []]]], "'(1 2 3)"],
                 \[[1, 2], "(cons 1 2)"],
                 \["x", "((lambda () 'x))"],
